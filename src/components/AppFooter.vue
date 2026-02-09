@@ -1,7 +1,7 @@
 <template>
   <footer class="app-footer">
     <p>Projet étudiant – IMAC · 2026</p>
-    <p class="api">Données fournies par l’API TMDB ?</p>
+    <p class="api">Données fournies par l’API TMDB</p>
   </footer>
 </template>
 
