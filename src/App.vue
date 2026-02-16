@@ -1,10 +1,8 @@
 <template>
   <AppHeader />
-
   <main class="app-main">
     <GameArea />
   </main>
-
   <AppFooter />
 </template>
 
@@ -15,22 +13,43 @@ import GameArea from "./components/GameArea.vue"
 </script>
 
 <style>
+/* --- CONFIGURATION DES THÈMES --- */
 :root {
-  /* Couleurs */
-  --color-bg: #111111;
-  --color-bg-soft: #141414;
-  --color-text: #F2F2F2;
-  --color-text-muted: #9A9A9A;
-  --color-accent: #D6B25E;
+  /* MODE CLAIR */
+  --bg-page: #f8fafc;
+  --bg-header: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hidden: #f1f5f9;
 
-  /* Typographies */
-  --font-ui: "Inter", system-ui, sans-serif;
-  --font-logo: "Playfair Display", serif;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --text-hidden: #94a3b8;
+
+  --border-color: #e2e8f0;
+  --border-dashed: #cbd5e1;
+}
+
+[data-theme="dark"] {
+  /* MODE SOMBRE */
+  --bg-page: #020617;
+  --bg-header: #0f172a;
+  --bg-card: #1e293b;
+  --bg-hidden: #0f172a;
+
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-hidden: #475569;
+
+  --border-color: #334155;
+  --border-dashed: #334155;
 }
 
 body {
   margin: 0;
-  font-family: var(--font-ui);
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  font-family: 'Outfit', sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .app-main {
