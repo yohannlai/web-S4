@@ -16,7 +16,7 @@
           <div class="genres-card card">
             <p>{{ genres.join(", ") }}</p>
           </div>
-          <div class="year-card card">
+          <div class="card year-card" :class="decadeClass">
             <p>{{ year }}</p>
           </div>
         </div>
@@ -54,6 +54,21 @@ const showTitle = ref(false)
 const isLoading = ref(true)
 const noMovies = ref(false)
 
+const decadeClass = ref("")
+
+function setDecadeFont(year) {
+  const decade = Math.floor(year / 10) * 10
+
+  if (decade === 1950) decadeClass.value = "year-50"
+  else if (decade === 1960) decadeClass.value = "year-60"
+  else if (decade === 1970) decadeClass.value = "year-70"
+  else if (decade === 1980) decadeClass.value = "year-80"
+  else if (decade === 1990) decadeClass.value = "year-90"
+  else if (decade === 2000) decadeClass.value = "year-2000"
+  else if (decade === 2010) decadeClass.value = "year-2010"
+  else decadeClass.value = "year-2020"
+}
+
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY
 const IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 
@@ -87,7 +102,8 @@ async function fetchRandomMovie() {
     const movieData = await movieRes.json()
 
     posterUrl.value = IMAGE_BASE + movieData.poster_path
-    year.value = movieData.release_date?.slice(0, 4) || "—"
+    year.value = movieData.release_date?.slice(0, 4)
+    setDecadeFont(Number(year.value))
     genres.value = movieData.genres.map(g => g.name)
     title.value = movieData.title
 
@@ -183,11 +199,44 @@ onMounted(fetchRandomMovie)
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-/* Année plus grosse */
+/* Année */
 .year-card p {
-  font-size: 2rem;
+  font-size: 6rem;
   font-weight: bold;
   margin: 0;
+}
+
+.year-50 p {
+  font-family: "Lobster", cursive;
+}
+
+.year-60 p {
+  font-family: "Risque", cursive;
+}
+
+.year-70 p {
+  font-family: "Luckiest Guy", cursive;
+  letter-spacing: 0.04em;
+}
+
+.year-80 p {
+  font-family: "Audiowide", cursive;
+}
+
+.year-90 p {
+  font-family: "Black Ops One", cursive;
+}
+
+.year-2000 p {
+  font-family: "Montserrat", sans-serif;
+}
+
+.year-2010 p {
+  font-family: "Poppins", sans-serif;
+}
+
+.year-2020 p {
+  font-family: "Space Grotesk", sans-serif;
 }
 
 /* Genres */
