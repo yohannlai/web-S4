@@ -144,7 +144,17 @@ async function fetchRandomMovie() {
       setDecadeFont(Number(year.value))
       genres.value = movieData.genres.map(g => g.name)
       title.value = movieData.title
-      director.value = creditsData.crew.find(p => p.job === "Director")?.name || "Inconnu"
+
+      const allDirectors = creditsData.crew.filter(p => p.job === "Director")
+      if (allDirectors.length > 0)
+      {
+        director.value = allDirectors.map(d => d.name).join(", ")
+      }
+      else
+      {
+        director.value = "Inconnu"
+      }
+
       actors.value = creditsData.cast.slice(0, 3).map(a => a.name)
 
       movieFound = true
