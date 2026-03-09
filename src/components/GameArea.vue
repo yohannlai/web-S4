@@ -31,7 +31,7 @@
               <p class="revealed-year">{{ year }}</p>
             </div>
             <div v-else class="hidden-content">
-              <p class="hidden-label">Décennie</p>
+              <p class="hidden-label">Année</p>
             </div>
           </div>
         </div>
@@ -73,7 +73,7 @@
 <script setup>
 import { ref, onMounted, reactive } from "vue"
 
-// --- ÉTAT DES CARTES ---
+// --- CARDS STATE ---
 const revealedCards = reactive({
   poster: false,
   genres: false,
@@ -119,7 +119,7 @@ async function fetchRandomMovie() {
 
   while (!movieFound && attempts < 5) {
     attempts++
-    const randomYear = randomBetween(1960, 2015)
+    const randomYear = randomBetween(1960, 2026)
     const randomPage = randomBetween(1, 5)
 
     try {
@@ -166,7 +166,7 @@ onMounted(fetchRandomMovie)
   --shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
-/* --- MISE EN PAGE GLOBALE --- */
+/* --- GLOBAL LAYOUT --- */
 .game-area {
   min-height: calc(100vh - 100px);
   padding: 2rem;
@@ -187,13 +187,13 @@ onMounted(fetchRandomMovie)
   margin: 0 auto;
 }
 
-/* --- CARTE GÉNÉRIQUE --- */
+/* --- GENERIC CARD --- */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   color: var(--text-main);
   border-radius: 12px;
-  padding: 0.5rem; /* C'est ce padding qui crée l'espace autour des pointillés */
+  padding: 0.5rem;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -219,7 +219,7 @@ onMounted(fetchRandomMovie)
   border-color: #cbd5e1;
 }
 
-/* --- CONTENU CACHÉ (POINTILLÉS) --- */
+/* --- HIDDEN CONTENT --- */
 .hidden-content {
   width: 100%;
   height: 100%;
@@ -233,7 +233,6 @@ onMounted(fetchRandomMovie)
 }
 
 .hidden-label {
-  /* Plus besoin de !important car la structure est propre */
   font-family: 'Outfit', sans-serif;
   font-weight: 800;
   font-size: 1.1rem;
@@ -243,7 +242,7 @@ onMounted(fetchRandomMovie)
   margin: 0;
 }
 
-/* --- CONTENU RÉVÉLÉ --- */
+/* --- REVEALED CONTENT --- */
 .revealed-content {
   width: 100%;
   height: 100%;
@@ -273,7 +272,7 @@ onMounted(fetchRandomMovie)
   animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* Styles de décennies */
+/* --- DECADES STYLES --- */
 .year-50 .revealed-year { font-family: "Lobster", cursive; color: #d97706; }
 .year-60 .revealed-year { font-family: "Risque", cursive; color: #ea580c; }
 .year-70 .revealed-year { font-family: "Luckiest Guy", cursive; color: #b45309; letter-spacing: 0.05em; }
@@ -283,7 +282,7 @@ onMounted(fetchRandomMovie)
 .year-2010 .revealed-year { font-family: "Poppins", sans-serif; color: #0f766e; }
 .year-2020 .revealed-year { font-family: "Space Grotesk", sans-serif; color: #4338ca; }
 
-/* Autres textes (Genre, Acteurs...) */
+/* --- OTHER TEXTS (GENRES, ACTORS...) --- */
 .genres-card .revealed-content p,
 .director-card .revealed-content p,
 .actors-card .revealed-content p {
@@ -295,14 +294,12 @@ onMounted(fetchRandomMovie)
   line-height: 1.4;
 }
 
-/* --- POSTER (CORRIGÉ) --- */
+/* --- POSTER --- */
 .poster-card {
   height: 525px;
   padding: 0.5rem;
-  /* J'ai supprimé background-color ici pour qu'il prenne celui de .card */
 }
 
-/* Quand l'image est là, on enlève le padding pour qu'elle remplisse tout */
 .poster-card:has(img) {
   padding: 0;
   border: none;
@@ -316,7 +313,7 @@ onMounted(fetchRandomMovie)
   display: block;
 }
 
-/* --- GRILLES --- */
+/* --- GRIDS --- */
 .right-grid {
   display: grid;
   grid-template-rows: 1fr 1fr 0.8fr;
@@ -341,7 +338,7 @@ onMounted(fetchRandomMovie)
   to { opacity: 1; }
 }
 
-/* Loader */
+/* --- LOADER --- */
 .loader {
   font-family: 'Outfit', sans-serif;
   font-weight: 600;
