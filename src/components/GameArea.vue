@@ -3,21 +3,39 @@
     <div v-if="isLoading" class="loader">Recherche d’un film…</div>
     <div v-else-if="noMovies" class="loader">Aucun film disponible pour l’instant</div>
 
-    <div v-else class="movie-grid">
+    <div v-else class="game-shell">
+      <div class="game-toolbar">
+        <button v-if="!roundCompleted" class="toolbar-btn pass-btn" @click="skipMovie">
+          Passer
+        </button>
+        <div v-else class="toolbar-spacer"></div>
+
+        <button v-if="roundCompleted" class="toolbar-btn next-btn" @click="fetchRandomMovie">
+          Suivant
+        </button>
+      </div>
+
+      <div class="movie-grid">
       <div
-        class="poster-card card clickable"
-        @click="revealedCards.poster = true"
+        class="poster-card card"
+        :class="{ 'locked': !revealedCards.poster, 'reveal-burst': isRevealAnimating && animateCards.poster }"
       >
         <img v-if="revealedCards.poster" :src="posterUrl" alt="Affiche du film" />
         <div v-else class="hidden-content">
-          <p class="hidden-label">Affiche</p>
+          <p class="hidden-label">
+            <span>🔒 </span>Affiche
+          </p>
         </div>
       </div>
 
       <div class="right-grid">
 
         <div class="top-right">
-          <div class="genres-card card clickable" @click="revealedCards.genres = true">
+          <div
+            class="genres-card card"
+            :class="{ 'clickable': !revealedCards.genres, 'reveal-burst': isRevealAnimating && animateCards.genres }"
+            @click="revealedCards.genres = true"
+          >
             <div v-if="revealedCards.genres" class="revealed-content">
               <p>{{ genres.join(", ") }}</p>
             </div>
@@ -26,7 +44,11 @@
             </div>
           </div>
 
-          <div class="card year-card clickable" :class="[revealedCards.year ? decadeClass : '']" @click="revealedCards.year = true">
+          <div
+            class="card year-card"
+            :class="[revealedCards.year ? decadeClass : '', { 'clickable': !revealedCards.year, 'reveal-burst': isRevealAnimating && animateCards.year }]"
+            @click="revealedCards.year = true"
+          >
             <div v-if="revealedCards.year" class="revealed-content">
               <p class="revealed-year">{{ year }}</p>
             </div>
@@ -37,7 +59,11 @@
         </div>
 
         <div class="bottom-right">
-          <div class="director-card card clickable" @click="revealedCards.director = true">
+          <div
+            class="director-card card"
+            :class="{ 'clickable': !revealedCards.director, 'reveal-burst': isRevealAnimating && animateCards.director }"
+            @click="revealedCards.director = true"
+          >
              <div v-if="revealedCards.director" class="revealed-content">
               <p>{{ director }}</p>
             </div>
@@ -46,7 +72,11 @@
             </div>
           </div>
 
-          <div class="actors-card card clickable" @click="revealedCards.actors = true">
+          <div
+            class="actors-card card"
+            :class="{ 'clickable': !revealedCards.actors, 'reveal-burst': isRevealAnimating && animateCards.actors }"
+            @click="revealedCards.actors = true"
+          >
              <div v-if="revealedCards.actors" class="revealed-content">
               <p>{{ actors.join(", ") }}</p>
             </div>
@@ -56,22 +86,60 @@
           </div>
         </div>
 
-        <div class="title-card card clickable" @click="revealedCards.title = true">
+        <div class="title-card card" :class="{ 'locked': !revealedCards.title, 'reveal-burst': isRevealAnimating && animateCards.title }">
            <div v-if="revealedCards.title" class="revealed-content">
              <p class="revealed-title">{{ title }}</p>
+             <p v-if="originalTitle" class="original-title">({{ originalTitle }})</p>
            </div>
            <div v-else class="hidden-content">
-             <p class="hidden-label">Titre</p>
+             <p class="hidden-label">
+               <span>🔒 </span>Titre
+             </p>
            </div>
         </div>
 
+      </div>
+      </div>
+    </div>
+
+    <!-- SEARCH BAR -->
+    <div class="search-section" v-if="!isLoading && !noMovies">
+      <div class="search-container" :class="searchFeedbackClass">
+        <div class="search-input-wrap">
+          <input
+            v-model="searchInput"
+            @input="updateSuggestions"
+            @keydown="handleSearchKeydown"
+            type="text"
+            placeholder="Devinez le titre du film..."
+            class="search-input"
+            :disabled="roundCompleted"
+          />
+
+          <!-- SUGGESTIONS -->
+          <div v-if="suggestions.length > 0" class="suggestions-dropdown">
+            <div
+              v-for="(suggestion, index) in suggestions"
+              :key="suggestion.id"
+              @click="selectSuggestion(suggestion)"
+              class="suggestion-item"
+              :class="{ 'active': highlightedSuggestionIndex === index }"
+            >
+              <span class="suggestion-title">{{ suggestion.title }}</span>
+              <span v-if="suggestion.showOriginal" class="suggestion-original">({{ suggestion.originalTitle }})</span>
+            </div>
+          </div>
+        </div>
+        <button @click="validateGuess" class="validate-btn" :disabled="!searchInput.trim() || roundCompleted">
+          ✓
+        </button>
       </div>
     </div>
   </section>
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from "vue"
+import { ref, onMounted, reactive, computed } from "vue"
 
 // --- CARDS STATE ---
 const revealedCards = reactive({
@@ -89,9 +157,28 @@ const genres = ref([])
 const director = ref("")
 const actors = ref([])
 const title = ref("")
+const originalTitle = ref("")
 const isLoading = ref(true)
 const noMovies = ref(false)
 const decadeClass = ref("")
+
+// --- SEARCH BAR STATE ---
+const searchInput = ref("")
+const suggestions = ref([])
+const searchFeedback = ref(null) // 'correct' | 'incorrect' | null
+const searchFeedbackClass = computed(() => searchFeedback.value)
+const roundCompleted = ref(false)
+const isRevealAnimating = ref(false)
+const highlightedSuggestionIndex = ref(-1)
+
+const animateCards = reactive({
+  poster: false,
+  genres: false,
+  year: false,
+  director: false,
+  actors: false,
+  title: false
+})
 
 function setDecadeFont(year) {
   const decade = Math.floor(year / 10) * 10
@@ -110,9 +197,147 @@ function randomBetween(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
+function normalizeTitle(value) {
+  return (value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function revealAllCards() {
+  Object.keys(revealedCards).forEach((key) => {
+    animateCards[key] = !revealedCards[key]
+    revealedCards[key] = true
+  })
+
+  isRevealAnimating.value = true
+  setTimeout(() => {
+    isRevealAnimating.value = false
+    Object.keys(animateCards).forEach((key) => {
+      animateCards[key] = false
+    })
+  }, 500)
+}
+
+async function updateSuggestions() {
+  highlightedSuggestionIndex.value = -1
+
+  if (!searchInput.value.trim()) {
+    suggestions.value = []
+    return
+  }
+
+  try {
+    const res = await fetch(
+      `https://api.themoviedb.org/3/search/movie?api_key=${API_KEY}&language=fr-FR&query=${encodeURIComponent(searchInput.value)}`
+    )
+    const data = await res.json()
+    suggestions.value = data.results.slice(0, 5).map(movie => ({
+      id: movie.id,
+      title: movie.title,
+      originalTitle: movie.original_title,
+      showOriginal:
+        movie.original_language !== "fr" &&
+        movie.original_title &&
+        movie.original_title !== movie.title
+    }))
+  } catch (error) {
+    console.error("Erreur suggestions:", error)
+    suggestions.value = []
+  }
+}
+
+function selectSuggestion(suggestion) {
+  searchInput.value = suggestion.title
+  suggestions.value = []
+  highlightedSuggestionIndex.value = -1
+  validateGuess()
+}
+
+function syncInputWithHighlightedSuggestion() {
+  if (highlightedSuggestionIndex.value < 0 || highlightedSuggestionIndex.value >= suggestions.value.length) return
+
+  searchInput.value = suggestions.value[highlightedSuggestionIndex.value].title
+}
+
+function handleSearchKeydown(event) {
+  if (roundCompleted.value) return
+
+  if (event.key === "ArrowDown" && suggestions.value.length > 0) {
+    event.preventDefault()
+    highlightedSuggestionIndex.value =
+      highlightedSuggestionIndex.value < suggestions.value.length - 1
+        ? highlightedSuggestionIndex.value + 1
+        : 0
+    syncInputWithHighlightedSuggestion()
+    return
+  }
+
+  if (event.key === "ArrowUp" && suggestions.value.length > 0) {
+    event.preventDefault()
+    highlightedSuggestionIndex.value =
+      highlightedSuggestionIndex.value > 0
+        ? highlightedSuggestionIndex.value - 1
+        : suggestions.value.length - 1
+    syncInputWithHighlightedSuggestion()
+    return
+  }
+
+  if (event.key === "Enter") {
+    event.preventDefault()
+    if (highlightedSuggestionIndex.value >= 0 && highlightedSuggestionIndex.value < suggestions.value.length) {
+      selectSuggestion(suggestions.value[highlightedSuggestionIndex.value])
+      return
+    }
+    validateGuess()
+  }
+
+  if (event.key === "Escape") {
+    suggestions.value = []
+    highlightedSuggestionIndex.value = -1
+  }
+}
+
+function validateGuess() {
+  if (!searchInput.value.trim() || roundCompleted.value) return
+
+  const guess = normalizeTitle(searchInput.value)
+  const expectedTitles = [normalizeTitle(title.value), normalizeTitle(originalTitle.value)].filter(Boolean)
+  const correct = expectedTitles.includes(guess)
+
+  if (correct) {
+    searchFeedback.value = 'correct'
+    revealAllCards()
+    roundCompleted.value = true
+    searchInput.value = ""
+    suggestions.value = []
+
+    setTimeout(() => {
+      searchFeedback.value = null
+    }, 800)
+  } else {
+    searchFeedback.value = 'incorrect'
+    suggestions.value = []
+    setTimeout(() => {
+      searchFeedback.value = null
+    }, 600)
+    searchInput.value = ""
+  }
+}
+
 async function fetchRandomMovie() {
   Object.keys(revealedCards).forEach(key => revealedCards[key] = false)
+  Object.keys(animateCards).forEach(key => animateCards[key] = false)
   isLoading.value = true
+  noMovies.value = false
+  roundCompleted.value = false
+  isRevealAnimating.value = false
+  searchInput.value = ""
+  suggestions.value = []
+  searchFeedback.value = null
+  highlightedSuggestionIndex.value = -1
 
   let attempts = 0
   let movieFound = false
@@ -145,6 +370,15 @@ async function fetchRandomMovie() {
       genres.value = movieData.genres.map(g => g.name)
       title.value = movieData.title
 
+      if (movieData.original_language !== 'fr' && movieData.original_title !== movieData.title)
+      {
+        originalTitle.value = movieData.original_title
+      }
+      else
+      {
+        originalTitle.value = ""
+      }
+
       const allDirectors = creditsData.crew.filter(p => p.job === "Director")
       if (allDirectors.length > 0)
       {
@@ -166,6 +400,16 @@ async function fetchRandomMovie() {
   if (!movieFound) noMovies.value = true
 }
 
+function skipMovie() {
+  if (roundCompleted.value) return
+  revealAllCards()
+  roundCompleted.value = true
+  searchInput.value = ""
+  suggestions.value = []
+  searchFeedback.value = null
+  highlightedSuggestionIndex.value = -1
+}
+
 onMounted(fetchRandomMovie)
 </script>
 
@@ -181,11 +425,56 @@ onMounted(fetchRandomMovie)
   min-height: calc(100vh - 100px);
   padding: 2rem;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   background-color: var(--bg-page);
   transition: background-color 0.3s ease;
   font-family: 'Outfit', sans-serif;
+}
+
+.game-shell {
+  width: 100%;
+  max-width: 1100px;
+}
+
+.game-toolbar {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.toolbar-spacer {
+  width: 1px;
+  height: 1px;
+}
+
+.toolbar-btn {
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  border-radius: 999px;
+  padding: 0.5rem 1rem;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.toolbar-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.pass-btn {
+  color: #b91c1c;
+}
+
+.next-btn {
+  color: #0f766e;
 }
 
 .movie-grid {
@@ -215,6 +504,10 @@ onMounted(fetchRandomMovie)
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-sizing: border-box;
   overflow: hidden;
+}
+
+.reveal-burst {
+  animation: revealFlip 0.5s ease;
 }
 
 /* --- INTERACTION --- */
@@ -263,6 +556,17 @@ onMounted(fetchRandomMovie)
   animation: fadeIn 0.4s ease-out;
 }
 
+.locked {
+  cursor: not-allowed;
+  opacity: 0.7;
+  border-color: transparent;
+}
+
+.locked:hover {
+  transform: none;
+  box-shadow: var(--shadow-soft);
+}
+
 .revealed-title {
   font-family: "Playfair Display", serif;
   font-style: italic;
@@ -272,6 +576,16 @@ onMounted(fetchRandomMovie)
   margin: 0;
   line-height: 1.2;
   padding: 0 10px;
+}
+
+.original-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1rem;
+  color: var(--text-muted);
+  margin: 0.3rem 0 0 0;
+  font-style: italic;
+  font-weight: 400;
+  animation: fadeInUp 0.5s ease-out;
 }
 
 .revealed-year {
@@ -348,6 +662,11 @@ onMounted(fetchRandomMovie)
   to { opacity: 1; }
 }
 
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* --- LOADER --- */
 .loader {
   font-family: 'Outfit', sans-serif;
@@ -356,5 +675,183 @@ onMounted(fetchRandomMovie)
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 2px;
+}
+
+/* --- SEARCH BAR --- */
+.search-section {
+  width: 100%;
+  max-width: 1100px;
+  margin: 2rem auto 0 auto;
+  padding: 0;
+  position: relative;
+}
+
+.search-container {
+  display: flex;
+  gap: 1rem;
+  position: relative;
+  width: 100%;
+}
+
+.search-input-wrap {
+  flex: 1;
+  width: 100%;
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 1rem;
+  font-family: 'Outfit', sans-serif;
+  font-size: 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-soft);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #4338ca;
+  box-shadow: var(--shadow-hover);
+}
+
+.search-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.search-input::placeholder {
+  color: var(--text-hidden);
+}
+
+.validate-btn {
+  padding: 1rem 1.5rem;
+  background-color: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: 12px;
+  color: var(--text-main);
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-soft);
+}
+
+.validate-btn:hover:not(:disabled) {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-hover);
+  border-color: #cbd5e1;
+}
+
+.validate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* FEEDBACK STATES */
+.search-container.correct .search-input,
+.search-container.correct .validate-btn {
+  border-color: #10b981 !important;
+  background-color: rgba(16, 185, 129, 0.1);
+  animation: correctFeedback 0.8s ease-out;
+}
+
+.search-container.incorrect .search-input,
+.search-container.incorrect .validate-btn {
+  border-color: #ef4444 !important;
+  background-color: rgba(239, 68, 68, 0.1);
+  animation: incorrectFeedback 0.6s ease-out;
+}
+
+/* SUGGESTIONS DROPDOWN */
+.suggestions-dropdown {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 0;
+  width: 100%;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-hover);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.suggestion-item {
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:hover {
+  background-color: color-mix(in srgb, var(--bg-hidden) 75%, var(--bg-card));
+  padding-left: 1.5rem;
+}
+
+.suggestion-item.active {
+  background-color: color-mix(in srgb, var(--bg-hidden) 75%, var(--bg-card));
+  padding-left: 1.5rem;
+}
+
+.suggestion-title {
+  color: var(--text-main);
+}
+
+.suggestion-original {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ANIMATIONS */
+@keyframes correctFeedback {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes incorrectFeedback {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes revealFlip {
+  0% {
+    transform: rotateY(0deg);
+  }
+  50% {
+    transform: rotateY(90deg);
+  }
+  100% {
+    transform: rotateY(0deg);
+  }
 }
 </style>
