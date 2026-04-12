@@ -10,9 +10,24 @@
         </button>
         <div v-else class="toolbar-spacer"></div>
 
+        <div class="score-zone">
+          <button
+            class="toolbar-btn score-btn"
+            @click="toggleHistory"
+            title="Voir l'historique de la partie"
+            aria-label="Voir l'historique de la partie"
+          >
+            <span class="score-label">SCORE</span>
+            <span class="score-value">{{ totalScore }}</span>
+            <span class="score-hint">Historique</span>
+          </button>
+          <p v-if="!roundCompleted" class="time-bonus">Bonus temps: +{{ currentTimeBonus }}</p>
+        </div>
+
         <button v-if="roundCompleted" class="toolbar-btn next-btn" @click="fetchRandomMovie">
           Suivant
         </button>
+        <div v-else class="toolbar-spacer"></div>
       </div>
 
       <div class="movie-grid">
@@ -136,10 +151,59 @@
       </div>
     </div>
   </section>
+
+  <div v-if="isHistoryOpen" class="history-overlay" @click.self="isHistoryOpen = false">
+    <div class="history-modal">
+      <div class="history-header">
+        <h3>Historique de la partie</h3>
+        <button class="history-close" @click="isHistoryOpen = false">Fermer</button>
+      </div>
+
+      <div class="history-summary">
+        <p>Score total: <strong>{{ totalScore }}</strong></p>
+        <p>Série actuelle: <strong>{{ streak }}</strong></p>
+      </div>
+
+      <div v-if="gameHistory.length === 0" class="history-empty">
+        Aucune manche jouée pour l'instant.
+      </div>
+
+      <ul v-else class="history-list">
+        <li v-for="entry in gameHistory" :key="entry.id" class="history-item">
+          <div class="history-topline">
+            <span>Manche {{ entry.round }} - {{ entry.title }}</span>
+            <strong :class="entry.passed ? 'history-passed' : 'history-points'">
+              {{ entry.passed ? "Passé" : `+${entry.points}` }}
+            </strong>
+          </div>
+          <p class="history-details">
+            {{ entry.passed ? "Film passé" : `Indices: ${entry.revealedHints} • Erreurs: ${entry.wrongGuesses} • Temps: ${entry.elapsedSeconds}s • x${entry.streakMultiplier.toFixed(2)}` }}
+          </p>
+        </li>
+      </ul>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, computed } from "vue"
+import { ref, onMounted, onUnmounted, reactive, computed } from "vue"
+
+const COMPETITIVE_CONFIG = {
+  basePoints: 100,
+  minFoundPoints: 20,
+  hintPenalties: {
+    genres: 15,
+    year: 20,
+    director: 25,
+    actors: 30
+  },
+  wrongGuessPenalty: 5,
+  maxWrongGuessPenalty: 20,
+  timeWindowSeconds: 60,
+  timeBonusStepSeconds: 3,
+  storageKey: "cinelogique_competitive_state_v1",
+  resetOnReloadKey: "cinelogique_competitive_reset_on_reload_v1"
+}
 
 // --- CARDS STATE ---
 const revealedCards = reactive({
@@ -161,6 +225,7 @@ const originalTitle = ref("")
 const isLoading = ref(true)
 const noMovies = ref(false)
 const decadeClass = ref("")
+const currentMovieId = ref(null)
 
 // --- SEARCH BAR STATE ---
 const searchInput = ref("")
@@ -170,6 +235,14 @@ const searchFeedbackClass = computed(() => searchFeedback.value)
 const roundCompleted = ref(false)
 const isRevealAnimating = ref(false)
 const highlightedSuggestionIndex = ref(-1)
+const wrongGuesses = ref(0)
+const roundStartedAt = ref(Date.now())
+const nowTimestamp = ref(Date.now())
+const totalScore = ref(0)
+const streak = ref(0)
+const gameHistory = ref([])
+const isHistoryOpen = ref(false)
+let timerInterval = null
 
 const animateCards = reactive({
   poster: false,
@@ -178,6 +251,19 @@ const animateCards = reactive({
   director: false,
   actors: false,
   title: false
+})
+
+const elapsedSeconds = computed(() => {
+  if (roundCompleted.value) return 0
+  return Math.max(0, Math.floor((nowTimestamp.value - roundStartedAt.value) / 1000))
+})
+
+const currentTimeBonus = computed(() => getTimeBonus(elapsedSeconds.value))
+
+const hasProgressToLose = computed(() => {
+  const hasScoreOrHistory = totalScore.value > 0 || gameHistory.value.length > 0
+  const activeRound = !isLoading.value && !noMovies.value && !roundCompleted.value
+  return hasScoreOrHistory || activeRound
 })
 
 function setDecadeFont(year) {
@@ -219,6 +305,102 @@ function revealAllCards() {
       animateCards[key] = false
     })
   }, 500)
+}
+
+function getHintPenalty() {
+  let penalty = 0
+  if (revealedCards.genres) penalty += COMPETITIVE_CONFIG.hintPenalties.genres
+  if (revealedCards.year) penalty += COMPETITIVE_CONFIG.hintPenalties.year
+  if (revealedCards.director) penalty += COMPETITIVE_CONFIG.hintPenalties.director
+  if (revealedCards.actors) penalty += COMPETITIVE_CONFIG.hintPenalties.actors
+  return penalty
+}
+
+function getWrongGuessPenalty() {
+  return Math.min(
+    wrongGuesses.value * COMPETITIVE_CONFIG.wrongGuessPenalty,
+    COMPETITIVE_CONFIG.maxWrongGuessPenalty
+  )
+}
+
+function getTimeBonus(durationSeconds) {
+  return Math.max(
+    0,
+    Math.floor((COMPETITIVE_CONFIG.timeWindowSeconds - durationSeconds) / COMPETITIVE_CONFIG.timeBonusStepSeconds)
+  )
+}
+
+function getStreakMultiplier(nextStreak) {
+  if (nextStreak >= 5) return 1.2
+  if (nextStreak >= 3) return 1.1
+  return 1
+}
+
+function buildRoundEntry({ passed, points = 0, revealedHints = 0, elapsed = 0, streakMultiplier = 1 }) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    round: gameHistory.value.length + 1,
+    movieId: currentMovieId.value,
+    title: title.value,
+    originalTitle: originalTitle.value,
+    passed,
+    points,
+    revealedHints,
+    wrongGuesses: wrongGuesses.value,
+    elapsedSeconds: elapsed,
+    streakMultiplier,
+    playedAt: new Date().toISOString()
+  }
+}
+
+function saveCompetitiveState() {
+  const payload = {
+    totalScore: totalScore.value,
+    streak: streak.value,
+    gameHistory: gameHistory.value
+  }
+  localStorage.setItem(COMPETITIVE_CONFIG.storageKey, JSON.stringify(payload))
+}
+
+function loadCompetitiveState() {
+  try {
+    const raw = localStorage.getItem(COMPETITIVE_CONFIG.storageKey)
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    totalScore.value = Number(parsed.totalScore) || 0
+    streak.value = Number(parsed.streak) || 0
+    gameHistory.value = Array.isArray(parsed.gameHistory) ? parsed.gameHistory : []
+  } catch (error) {
+    console.error("Erreur de lecture du cache compétitif:", error)
+  }
+}
+
+function resetCompetitiveState() {
+  totalScore.value = 0
+  streak.value = 0
+  gameHistory.value = []
+  isHistoryOpen.value = false
+  localStorage.removeItem(COMPETITIVE_CONFIG.storageKey)
+}
+
+function toggleHistory() {
+  isHistoryOpen.value = !isHistoryOpen.value
+}
+
+function handleNewGameRequested() {
+  resetCompetitiveState()
+  fetchRandomMovie()
+}
+
+function handleBeforeUnload(event) {
+  if (!hasProgressToLose.value) return
+  event.preventDefault()
+  event.returnValue = "Etes-vous sur de vouloir quitter la partie en cours ? Vous allez perdre votre progression."
+}
+
+function handlePageHide() {
+  if (!hasProgressToLose.value) return
+  localStorage.setItem(COMPETITIVE_CONFIG.resetOnReloadKey, "1")
 }
 
 async function updateSuggestions() {
@@ -308,6 +490,29 @@ function validateGuess() {
   const correct = expectedTitles.includes(guess)
 
   if (correct) {
+    const elapsed = Math.max(0, Math.floor((Date.now() - roundStartedAt.value) / 1000))
+    const hintPenalty = getHintPenalty()
+    const wrongPenalty = getWrongGuessPenalty()
+    const timeBonus = getTimeBonus(elapsed)
+    const nextStreak = streak.value + 1
+    const streakMultiplier = getStreakMultiplier(nextStreak)
+    const rawScore = COMPETITIVE_CONFIG.basePoints - hintPenalty - wrongPenalty + timeBonus
+    const safeScore = Math.max(COMPETITIVE_CONFIG.minFoundPoints, rawScore)
+    const finalScore = Math.round(safeScore * streakMultiplier)
+
+    totalScore.value += finalScore
+    streak.value = nextStreak
+    gameHistory.value.unshift(
+      buildRoundEntry({
+        passed: false,
+        points: finalScore,
+        revealedHints: [revealedCards.genres, revealedCards.year, revealedCards.director, revealedCards.actors].filter(Boolean).length,
+        elapsed,
+        streakMultiplier
+      })
+    )
+    saveCompetitiveState()
+
     searchFeedback.value = 'correct'
     revealAllCards()
     roundCompleted.value = true
@@ -318,6 +523,7 @@ function validateGuess() {
       searchFeedback.value = null
     }, 800)
   } else {
+    wrongGuesses.value += 1
     searchFeedback.value = 'incorrect'
     suggestions.value = []
     setTimeout(() => {
@@ -338,6 +544,10 @@ async function fetchRandomMovie() {
   suggestions.value = []
   searchFeedback.value = null
   highlightedSuggestionIndex.value = -1
+  wrongGuesses.value = 0
+  roundStartedAt.value = Date.now()
+  nowTimestamp.value = Date.now()
+  currentMovieId.value = null
 
   let attempts = 0
   let movieFound = false
@@ -357,6 +567,7 @@ async function fetchRandomMovie() {
 
       const randomMovie = movies[randomBetween(0, movies.length - 1)]
       if (!randomMovie.poster_path) continue
+      currentMovieId.value = randomMovie.id
 
       const movieRes = await fetch(`https://api.themoviedb.org/3/movie/${randomMovie.id}?api_key=${API_KEY}&language=fr-FR`)
       const movieData = await movieRes.json()
@@ -402,6 +613,19 @@ async function fetchRandomMovie() {
 
 function skipMovie() {
   if (roundCompleted.value) return
+
+  gameHistory.value.unshift(
+    buildRoundEntry({
+      passed: true,
+      points: 0,
+      revealedHints: [revealedCards.genres, revealedCards.year, revealedCards.director, revealedCards.actors].filter(Boolean).length,
+      elapsed: Math.max(0, Math.floor((Date.now() - roundStartedAt.value) / 1000)),
+      streakMultiplier: 1
+    })
+  )
+  streak.value = 0
+  saveCompetitiveState()
+
   revealAllCards()
   roundCompleted.value = true
   searchInput.value = ""
@@ -410,7 +634,32 @@ function skipMovie() {
   highlightedSuggestionIndex.value = -1
 }
 
-onMounted(fetchRandomMovie)
+onMounted(() => {
+  const mustResetAfterReload = localStorage.getItem(COMPETITIVE_CONFIG.resetOnReloadKey) === "1"
+  if (mustResetAfterReload) {
+    localStorage.removeItem(COMPETITIVE_CONFIG.resetOnReloadKey)
+    resetCompetitiveState()
+  } else {
+    loadCompetitiveState()
+  }
+
+  fetchRandomMovie()
+  timerInterval = window.setInterval(() => {
+    nowTimestamp.value = Date.now()
+  }, 1000)
+  window.addEventListener("cine:new-game", handleNewGameRequested)
+  window.addEventListener("beforeunload", handleBeforeUnload)
+  window.addEventListener("pagehide", handlePageHide)
+})
+
+onUnmounted(() => {
+  if (timerInterval) {
+    clearInterval(timerInterval)
+  }
+  window.removeEventListener("cine:new-game", handleNewGameRequested)
+  window.removeEventListener("beforeunload", handleBeforeUnload)
+  window.removeEventListener("pagehide", handlePageHide)
+})
 </script>
 
 <style scoped>
@@ -443,6 +692,7 @@ onMounted(fetchRandomMovie)
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   margin-bottom: 1rem;
 }
 
@@ -475,6 +725,56 @@ onMounted(fetchRandomMovie)
 
 .next-btn {
   color: #0f766e;
+}
+
+.score-btn {
+  color: #1d4ed8;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0.55rem 1rem;
+  border-width: 2px;
+}
+
+.score-btn:hover,
+.score-btn:focus-visible {
+  transform: translateY(-2px);
+}
+
+.score-label {
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  font-weight: 800;
+  color: #2563eb;
+}
+
+.score-value {
+  font-size: 1.25rem;
+  line-height: 1;
+  font-weight: 900;
+  color: var(--text-main);
+}
+
+.score-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  padding-left: 0.45rem;
+  border-left: 1px solid color-mix(in srgb, var(--text-muted) 45%, transparent);
+}
+
+.score-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.time-bonus {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 .movie-grid {
@@ -852,6 +1152,118 @@ onMounted(fetchRandomMovie)
   }
   100% {
     transform: rotateY(0deg);
+  }
+}
+
+.history-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  padding: 1rem;
+}
+
+.history-modal {
+  width: min(700px, 100%);
+  max-height: 80vh;
+  overflow: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: var(--shadow-hover);
+  padding: 1rem;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.history-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.history-close {
+  border: 1px solid var(--border-color);
+  background: var(--bg-hidden);
+  color: var(--text-main);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+}
+
+.history-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.75rem;
+  color: var(--text-main);
+}
+
+.history-summary p {
+  margin: 0;
+}
+
+.history-empty {
+  margin-top: 1rem;
+  color: var(--text-muted);
+}
+
+.history-list {
+  list-style: none;
+  margin: 1rem 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.history-item {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--bg-hidden) 45%, var(--bg-card));
+}
+
+.history-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.history-details {
+  margin: 0.4rem 0 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.history-points {
+  color: #0f766e;
+}
+
+.history-passed {
+  color: #b91c1c;
+}
+
+@media (max-width: 760px) {
+  .game-toolbar {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .history-summary {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
   }
 }
 </style>

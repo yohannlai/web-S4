@@ -37,7 +37,9 @@ onMounted(() => {
   document.documentElement.setAttribute('data-theme', savedTheme)
 })
 
-function reloadPage() { window.location.reload() }
+function reloadPage() {
+  window.dispatchEvent(new CustomEvent("cine:new-game"))
+}
 </script>
 
 <style scoped>
