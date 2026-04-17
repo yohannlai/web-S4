@@ -40,15 +40,20 @@
                 <span class="meta-label">Durée :</span>
                 <span class="meta-value">{{ formatRuntime(movieData.runtime) }}</span>
               </div>
-              <div v-if="movieData.rating" class="meta-item">
+              <div class="meta-item">
+                <span class="meta-label">Pays :</span>
+                <span class="meta-value">{{ movieData.countries?.length ? movieData.countries.join(', ') : 'Inconnu' }}</span>
+              </div>
+              <div class="meta-item">
                 <span class="meta-label">Note TMDB :</span>
-                <span class="meta-value">{{ movieData.rating.toFixed(1) }}/10</span>
+                <span class="meta-value">{{ Number(movieData.rating || 0) > 0 ? `${movieData.rating.toFixed(1)}/10` : 'N/A' }}</span>
               </div>
             </div>
           </div>
 
           <div class="meta-actions">
             <button
+              v-if="canMarkAsSeen"
               class="details-action-btn seen-btn"
               :class="{ active: isCurrentMovieSeen }"
               @click="handleSeenMovie"
@@ -84,8 +89,8 @@
         </div>
 
         <div v-if="movieData.director" class="credits-section">
-          <span class="section-label">Réalisateur :</span>
-          <p class="credit-value">{{ movieData.director }}</p>
+          <span class="section-label">{{ (movieData.directors?.length || 0) > 1 ? 'Réalisateurs :' : 'Réalisateur :' }}</span>
+          <p class="credit-value">{{ movieData.directors?.length ? movieData.directors.join(', ') : movieData.director }}</p>
         </div>
 
         <div v-if="movieData.actors.length > 0" class="credits-section">
@@ -114,7 +119,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { fetchMovieDetailsById } from '../services/api/tmdb.service'
 import {
@@ -133,6 +138,13 @@ const isLoading = ref(true)
 const isCurrentMovieSeen = ref(false)
 const isCurrentMovieWatchlist = ref(false)
 const isFullscreen = ref(Boolean(document.fullscreenElement))
+
+const canMarkAsSeen = computed(() => {
+  if (!movieData.value?.releaseDate) return true
+
+  const todayIso = new Date().toISOString().slice(0, 10)
+  return String(movieData.value.releaseDate).slice(0, 10) <= todayIso
+})
 
 function syncFullscreenState() {
   isFullscreen.value = Boolean(document.fullscreenElement)
@@ -207,6 +219,22 @@ function goBack() {
     return
   }
 
+  if (route.query.from === 'explorer') {
+    router.push({
+      name: 'explorer',
+      query: {
+        ...(typeof route.query.q === 'string' && route.query.q ? { q: route.query.q } : {}),
+        ...(typeof route.query.sort === 'string' && route.query.sort ? { sort: route.query.sort } : {}),
+        ...(typeof route.query.genre === 'string' && route.query.genre ? { genre: route.query.genre } : {}),
+        ...(typeof route.query.country === 'string' && route.query.country ? { country: route.query.country } : {}),
+        ...(typeof route.query.decade === 'string' && route.query.decade ? { decade: route.query.decade } : {}),
+        ...(typeof route.query.year === 'string' && route.query.year ? { year: route.query.year } : {}),
+        ...(typeof route.query.page === 'string' && route.query.page ? { page: route.query.page } : {})
+      }
+    })
+    return
+  }
+
   router.push({ name: 'game' })
 }
 
@@ -215,6 +243,8 @@ function goToCollection() {
 }
 
 function handleSeenMovie() {
+  if (!canMarkAsSeen.value) return
+
   const payload = createCollectionPayload()
   if (!payload) return
 
@@ -417,6 +447,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 2rem;
+  align-items: center;
   padding: 1rem;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -424,16 +455,19 @@ onUnmounted(() => {
 }
 
 .meta-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.4rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.4rem;
+  row-gap: 0.7rem;
 }
 
 .meta-actions {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 0.55rem;
   align-items: stretch;
+  align-self: center;
   min-width: 220px;
 }
 
@@ -500,11 +534,13 @@ onUnmounted(() => {
   font-weight: 700;
   color: var(--text-muted);
   font-size: 0.9rem;
+  white-space: nowrap;
 }
 
 .meta-value {
   color: var(--text-main);
   font-weight: 600;
+  min-width: 0;
 }
 
 .genres-section,

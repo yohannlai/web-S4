@@ -2,7 +2,9 @@
   <header class="app-header">
     <div class="header-content">
       <div class="brand">
-        <h1 class="logo"><a href="">Cinélogique</a></h1>
+        <h1 class="logo">
+          <button class="logo-link" @click="handleBrandClick">Cinélogique</button>
+        </h1>
         <p class="tagline">Un film. Des indices. À toi de trouver.</p>
       </div>
 
@@ -10,6 +12,10 @@
         <button class="btn-theme" @click="toggleTheme" :title="isDark ? 'Mode clair' : 'Mode sombre'">
           <span v-if="isDark">☀️</span>
           <span v-else>🌙</span>
+        </button>
+
+        <button class="btn btn-secondary btn-explorer" @click="goToExplorer" :class="{ active: isExplorerPage }">
+          Explorer
         </button>
 
         <button class="btn btn-secondary" @click="openRules">Règles</button>
@@ -20,9 +26,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const isDark = ref(false)
+const router = useRouter()
+const route = useRoute()
+
+const isExplorerPage = computed(() => route.name === 'explorer')
 
 function toggleTheme() {
   isDark.value = !isDark.value
@@ -38,11 +49,34 @@ onMounted(() => {
 })
 
 function reloadPage() {
+  if (route.name === 'explorer') {
+    router.push({ name: 'game', query: { newGame: '1' } })
+    return
+  }
+
   window.dispatchEvent(new CustomEvent("cine:new-game"))
 }
 
+function goToExplorer() {
+  router.push({ name: 'explorer' })
+}
+
 function openRules() {
+  if (route.name === 'explorer') {
+    router.push({ name: 'game', query: { openRules: '1' } })
+    return
+  }
+
   window.dispatchEvent(new CustomEvent("cine:open-rules"))
+}
+
+function handleBrandClick() {
+  if (route.name === 'explorer') {
+    router.push({ name: 'game', query: { openRules: '1' } })
+    return
+  }
+
+  router.push({ name: 'game' })
 }
 </script>
 
@@ -68,13 +102,22 @@ function openRules() {
   gap: 0.5rem;
 }
 
-.logo, a {
+.logo {
+  margin: 0;
+}
+
+.logo-link {
+  text-decoration-line: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
   text-decoration-line: none;
   font-family: "Playfair Display", serif;
   font-style: italic;
   font-weight: 700;
   font-size: 2.5rem;
-  margin: 0;
   color: var(--text-main);
   line-height: 1;
 }
@@ -118,6 +161,32 @@ function openRules() {
   background: transparent;
   border: 2px solid var(--border-color);
   color: var(--text-main);
+}
+
+.btn-explorer.active {
+  border-color: #d97706;
+  background: color-mix(in srgb, #f59e0b 34%, var(--bg-card));
+  color: #4a2205;
+}
+
+[data-theme='dark'] .btn-explorer.active {
+  border-color: #fbbf24;
+  background: color-mix(in srgb, #d97706 45%, var(--bg-card));
+  color: #fff3e8;
+}
+
+.btn-explorer.active:hover,
+.btn-explorer.active:focus-visible {
+  border-color: #d97706;
+  background: color-mix(in srgb, #f59e0b 40%, var(--bg-card));
+  color: #4a2205;
+}
+
+[data-theme='dark'] .btn-explorer.active:hover,
+[data-theme='dark'] .btn-explorer.active:focus-visible {
+  border-color: #fbbf24;
+  background: color-mix(in srgb, #d97706 52%, var(--bg-card));
+  color: #fff3e8;
 }
 
 .btn-secondary:hover,

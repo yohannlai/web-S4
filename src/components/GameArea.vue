@@ -7,7 +7,13 @@
       <div class="game-toolbar">
         <div class="toolbar-left">
           <div v-if="revealedCards.poster" class="poster-actions">
-            <button class="toolbar-btn action-btn seen-btn" :class="{ active: isCurrentMovieSeen }" @click="handleSeenMovie" title="Marquer comme vu">
+            <button
+              v-if="canMarkSeenInCurrentMode"
+              class="toolbar-btn action-btn seen-btn"
+              :class="{ active: isCurrentMovieSeen }"
+              @click="handleSeenMovie"
+              title="Marquer comme vu"
+            >
               📽️ J'AI VU CE FILM !
             </button>
             <button class="toolbar-btn action-btn discover-btn" @click="goToMovieDetails" title="Voir les détails">
@@ -210,6 +216,25 @@
     </div>
   </div>
 
+  <div v-if="isModePickerOpen" class="rules-overlay" @click.self="chooseGameMode()">
+    <div class="rules-modal mode-modal">
+      <div class="rules-header">
+        <h2>Choisis ton mode</h2>
+      </div>
+
+      <p class="rules-intro">
+        Tu veux une partie classique, des films a l'affiche, des avant-premieres, ou explorer librement le catalogue ?
+      </p>
+
+      <div class="mode-actions">
+        <button class="mode-btn mode-classic" @click="chooseGameMode(gameRoundModes.CLASSIC)">Mode Classique</button>
+        <button class="mode-btn mode-now-playing" @click="chooseGameMode(gameRoundModes.NOW_PLAYING)">Mode A l'affiche</button>
+        <button class="mode-btn mode-upcoming" @click="chooseGameMode(gameRoundModes.UPCOMING)">Mode Avant-premiere</button>
+        <button class="mode-btn mode-explorer" @click="chooseExplorerMode">Mode Explorer</button>
+      </div>
+    </div>
+  </div>
+
   <div v-if="isRulesOpen" class="rules-overlay" @click.self="closeRulesModal">
     <div class="rules-modal">
       <div class="rules-header">
@@ -229,6 +254,7 @@
             <li>Chaque indice révélé te coûte des points.</li>
             <li>Si tu bloques, utilise <span class="rules-btn-tag pass">Passer</span> : 0 point pour la manche.</li>
             <li>Quand la manche est terminée, clique sur <span class="rules-btn-tag next">Suivant</span>.</li>
+            <li v-if="modeRuleLine">{{ modeRuleLine }}</li>
           </ul>
         </section>
 
@@ -247,7 +273,7 @@
         <section class="rules-card">
           <h3>Temps et pause</h3>
           <ul>
-            <li>Le chrono sert a calculer le bonus temps.</li>
+            <li>Le chrono sert à calculer le bonus temps.</li>
             <li>Ouvrir cette fenêtre met la manche en pause.</li>
             <li>L'historique affiche score, erreurs, indices et temps par manche.</li>
           </ul>
@@ -273,8 +299,8 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, reactive, computed } from "vue"
-import { useRouter } from "vue-router"
-import { fetchMovieSuggestions, fetchRandomRoundMovie } from "../services/api/tmdb.service"
+import { useRoute, useRouter } from "vue-router"
+import { fetchMovieSuggestions, fetchRandomRoundMovie, gameRoundModes } from "../services/api/tmdb.service"
 import {
   competitiveConfig,
   calculateHintPenalty,
@@ -294,8 +320,10 @@ import {
 import { normalizeTitle, resolveDecadeClass } from "../utils/movie-game.utils"
 
 const router = useRouter()
+const route = useRoute()
 const roundSnapshotStorageKey = "cine:competitive-round-snapshot"
 const suppressAutoRulesOnceKey = "cine:suppress-rules-once"
+const gameModeStorageKey = "cine:selected-game-mode"
 
 // --- CARDS STATE ---
 const revealedCards = reactive({
@@ -335,6 +363,7 @@ const streak = ref(0)
 const gameHistory = ref([])
 const isHistoryOpen = ref(false)
 const isRulesOpen = ref(false)
+const isModePickerOpen = ref(false)
 const hasSeenRulesOnce = ref(false)
 const hasBootstrappedRound = ref(false)
 const isCurrentMovieSeen = ref(false)
@@ -343,6 +372,7 @@ const lockYearPopAnimation = ref(false)
 const isTimerPaused = ref(false)
 const pausedAtTimestamp = ref(null)
 const pausedDurationMs = ref(0)
+const selectedGameMode = ref(gameRoundModes.CLASSIC)
 let timerInterval = null
 
 const animateCards = reactive({
@@ -370,6 +400,39 @@ const hasProgressToLose = computed(() => {
   const activeRound = !isLoading.value && !noMovies.value && !roundCompleted.value
   return hasScoreOrHistory || activeRound
 })
+
+const modeRuleLine = computed(() => {
+  if (selectedGameMode.value === gameRoundModes.NOW_PLAYING) {
+    return "Mode À l'affiche: chaque manche te plonge dans des films sortis sur les 6 dernières semaines."
+  }
+
+  if (selectedGameMode.value === gameRoundModes.UPCOMING) {
+    return "Mode Avant-première: tu tentes de deviner des films à venir (jusqu'à 2 ans) avec les indices disponibles."
+  }
+
+  return ''
+})
+
+const canMarkSeenInCurrentMode = computed(() => selectedGameMode.value !== gameRoundModes.UPCOMING)
+
+function normalizeGameMode(mode) {
+  if (Object.values(gameRoundModes).includes(mode)) {
+    return mode
+  }
+
+  return gameRoundModes.CLASSIC
+}
+
+function setSelectedGameMode(mode) {
+  const normalizedMode = normalizeGameMode(mode)
+  selectedGameMode.value = normalizedMode
+  localStorage.setItem(gameModeStorageKey, normalizedMode)
+}
+
+function restoreSelectedGameMode() {
+  const storedMode = localStorage.getItem(gameModeStorageKey)
+  setSelectedGameMode(storedMode)
+}
 
 function setDecadeFont(year) {
   decadeClass.value = resolveDecadeClass(year)
@@ -568,7 +631,20 @@ function handleRulesRequested() {
   openRulesModal()
 }
 
+function chooseGameMode(mode = gameRoundModes.CLASSIC) {
+  setSelectedGameMode(mode)
+  isModePickerOpen.value = false
+  openRulesModal()
+}
+
+function chooseExplorerMode() {
+  isModePickerOpen.value = false
+  router.push({ name: 'explorer', query: { origin: 'mode-picker' } })
+}
+
 function handleSeenMovie() {
+  if (!canMarkSeenInCurrentMode.value) return
+
   const payload = createCollectionPayload()
   if (!payload) return
 
@@ -597,8 +673,11 @@ function goToCollection() {
 
 function handleNewGameRequested() {
   resetGameProgress()
-  hasBootstrappedRound.value = true
-  fetchRandomMovie()
+  hasBootstrappedRound.value = false
+  hasSeenRulesOnce.value = false
+  isRulesOpen.value = false
+  isHistoryOpen.value = false
+  isModePickerOpen.value = true
 }
 
 function handleBeforeUnload(event) {
@@ -638,7 +717,7 @@ async function updateSuggestions() {
   }
 
   try {
-    suggestions.value = await fetchMovieSuggestions(searchInput.value)
+    suggestions.value = await fetchMovieSuggestions(searchInput.value, { gameMode: selectedGameMode.value })
   } catch (error) {
     console.error("Erreur suggestions:", error)
     suggestions.value = []
@@ -776,7 +855,7 @@ async function fetchRandomMovie() {
   let movieData = null
 
   try {
-    movieData = await fetchRandomRoundMovie({ minYear: 1960, maxYear: 2026, maxAttempts: 5 })
+    movieData = await fetchRandomRoundMovie({ minYear: 1960, maxAttempts: 7, gameMode: selectedGameMode.value })
   } catch (error) {
     console.error("Erreur API:", error)
   }
@@ -821,7 +900,9 @@ function skipMovie() {
   highlightedSuggestionIndex.value = -1
 }
 
-onMounted(() => {
+onMounted(async () => {
+  restoreSelectedGameMode()
+
   const mustResetAfterReload = localStorage.getItem(competitiveConfig.resetOnReloadKey) === "1"
   if (mustResetAfterReload) {
     localStorage.removeItem(competitiveConfig.resetOnReloadKey)
@@ -836,11 +917,44 @@ onMounted(() => {
   }
   hasSeenRulesOnce.value = hasBootstrappedRound.value
 
+  const shouldOpenRulesFromRoute = route.query.openRules === '1'
+  const shouldResetFromRoute = route.query.newGame === '1'
+
+  if (shouldResetFromRoute) {
+    resetGameProgress()
+    hasBootstrappedRound.value = false
+    hasSeenRulesOnce.value = false
+  }
+
+  if (shouldOpenRulesFromRoute) {
+    clearCurrentRoundSnapshot()
+    hasBootstrappedRound.value = false
+    hasSeenRulesOnce.value = false
+  }
+
   const shouldSuppressAutoRules = sessionStorage.getItem(suppressAutoRulesOnceKey) === "1"
   sessionStorage.removeItem(suppressAutoRulesOnceKey)
 
+  if (shouldOpenRulesFromRoute || shouldResetFromRoute) {
+    await router.replace({ name: 'game' })
+  }
+
   if (!shouldSuppressAutoRules) {
-    openRulesModal()
+    if (shouldOpenRulesFromRoute) {
+      openRulesModal()
+    } else {
+      const shouldShowModePicker =
+        !hasRestoredRound &&
+        totalScore.value === 0 &&
+        streak.value === 0 &&
+        gameHistory.value.length === 0
+
+      if (shouldShowModePicker) {
+        isModePickerOpen.value = true
+      } else {
+        openRulesModal()
+      }
+    }
   }
 
   timerInterval = window.setInterval(() => {
@@ -1629,6 +1743,54 @@ onUnmounted(() => {
   margin: 0.8rem 0 0 0;
   color: var(--text-main);
   line-height: 1.5;
+}
+
+.mode-modal {
+  width: min(560px, 100%);
+}
+
+.mode-actions {
+  margin-top: 1.2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+
+.mode-btn {
+  border: 2px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  border-radius: 999px;
+  padding: 0.6rem 1rem;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.mode-btn:hover,
+.mode-btn:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.mode-classic,
+.mode-now-playing,
+.mode-upcoming,
+.mode-explorer {
+  border-color: #0f766e;
+  color: #0f766e;
+}
+
+.mode-classic:hover,
+.mode-classic:focus-visible,
+.mode-now-playing:hover,
+.mode-now-playing:focus-visible,
+.mode-upcoming:hover,
+.mode-upcoming:focus-visible,
+.mode-explorer:hover,
+.mode-explorer:focus-visible {
+  background: color-mix(in srgb, #0f766e 14%, var(--bg-card));
 }
 
 .rules-grid {

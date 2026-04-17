@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 const GamePage = () => import('./pages/GamePage.vue')
 const MovieDetails = () => import('./pages/MovieDetails.vue')
 const CollectionPage = () => import('./pages/CollectionPage.vue')
+const ExplorerPage = () => import('./pages/ExplorerPage.vue')
 
 const routes = [
   {
@@ -19,6 +20,11 @@ const routes = [
     path: '/collection',
     component: CollectionPage,
     name: 'collection'
+  },
+  {
+    path: '/explorer',
+    component: ExplorerPage,
+    name: 'explorer'
   }
 ]
 
