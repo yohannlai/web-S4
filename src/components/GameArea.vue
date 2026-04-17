@@ -151,7 +151,7 @@
             type="text"
             placeholder="Devinez le titre du film..."
             class="search-input"
-            :disabled="roundCompleted"
+            :disabled="roundCompleted || isRulesOpen"
           />
 
           <!-- SUGGESTIONS -->
@@ -168,10 +168,10 @@
             </div>
           </div>
         </div>
-        <button @click="validateGuess" class="validate-btn" :disabled="!searchInput.trim() || roundCompleted">
+        <button @click="validateGuess" class="validate-btn" :disabled="!searchInput.trim() || roundCompleted || isRulesOpen">
           ✓
         </button>
-        <button @click="goToCollection" class="collection-nav-btn" title="Voir ma collection">
+        <button @click="goToCollection" class="collection-nav-btn" title="Voir ma collection" :disabled="isRulesOpen">
           🎟️ MA COLLECTION
         </button>
       </div>
@@ -209,6 +209,66 @@
       </ul>
     </div>
   </div>
+
+  <div v-if="isRulesOpen" class="rules-overlay" @click.self="closeRulesModal">
+    <div class="rules-modal">
+      <div class="rules-header">
+        <h2>Règles du jeu</h2>
+        <button class="rules-close" @click="closeRulesModal">{{ hasSeenRulesOnce ? "Reprendre" : "Commencer" }}</button>
+      </div>
+
+      <p class="rules-intro">
+        Bienvenue dans <em>Cinélogique</em>. Le but : retrouver le titre du film en utilisant le moins d'indices possible et le plus vite possible.
+      </p>
+
+      <div class="rules-grid">
+        <section class="rules-card">
+          <h3>Comment jouer</h3>
+          <ul>
+            <li>Devine le film avec la barre de recherche.</li>
+            <li>Chaque indice révélé te coûte des points.</li>
+            <li>Si tu bloques, utilise <span class="rules-btn-tag pass">Passer</span> : 0 point pour la manche.</li>
+            <li>Quand la manche est terminée, clique sur <span class="rules-btn-tag next">Suivant</span>.</li>
+          </ul>
+        </section>
+
+        <section class="rules-card">
+          <h3>Score compétitif</h3>
+          <ul>
+            <li>Base : 100 points.</li>
+            <li>Malus indices : Genre -15, Année -20, Réalisateur -25, Acteurs -30.</li>
+            <li>Erreurs : -5 par tentative ratée (max -20).</li>
+            <li>Bonus temps : plus tu trouves vite, plus tu gagnes.</li>
+            <li>Série : x1.10 à partir de 3, x1.20 à partir de 5.</li>
+            <li>Film trouvé : minimum 20 points, jamais négatif.</li>
+          </ul>
+        </section>
+
+        <section class="rules-card">
+          <h3>Temps et pause</h3>
+          <ul>
+            <li>Le chrono sert a calculer le bonus temps.</li>
+            <li>Ouvrir cette fenêtre met la manche en pause.</li>
+            <li>L'historique affiche score, erreurs, indices et temps par manche.</li>
+          </ul>
+        </section>
+
+        <section class="rules-card">
+          <h3>Collection et navigation</h3>
+          <ul>
+            <li>Après révélation du film : bouton <span class="rules-btn-tag discover">Découvrir ce film</span> pour ouvrir la fiche complète et en savoir plus. Possibilité d'ajouter à sa collection.</li>
+            <li>Bouton <span class="rules-btn-tag seen">J'ai vu ce film</span>.</li>
+            <li>Bouton <span class="rules-btn-tag collection">Ma collection</span> pour retrouver les films trouvés, vus et à voir.</li>
+            <li><span class="rules-btn-tag new-game">Nouvelle partie</span> réinitialise progression et score compétitif mais conserve la collection.</li>
+          </ul>
+        </section>
+      </div>
+
+      <p class="rules-footnote">
+        Astuce : moins d'indices + réponse rapide = gros score.
+      </p>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -235,6 +295,7 @@ import { normalizeTitle, resolveDecadeClass } from "../utils/movie-game.utils"
 
 const router = useRouter()
 const roundSnapshotStorageKey = "cine:competitive-round-snapshot"
+const suppressAutoRulesOnceKey = "cine:suppress-rules-once"
 
 // --- CARDS STATE ---
 const revealedCards = reactive({
@@ -273,9 +334,15 @@ const totalScore = ref(0)
 const streak = ref(0)
 const gameHistory = ref([])
 const isHistoryOpen = ref(false)
+const isRulesOpen = ref(false)
+const hasSeenRulesOnce = ref(false)
+const hasBootstrappedRound = ref(false)
 const isCurrentMovieSeen = ref(false)
 const isFullscreen = ref(Boolean(document.fullscreenElement))
 const lockYearPopAnimation = ref(false)
+const isTimerPaused = ref(false)
+const pausedAtTimestamp = ref(null)
+const pausedDurationMs = ref(0)
 let timerInterval = null
 
 const animateCards = reactive({
@@ -288,8 +355,12 @@ const animateCards = reactive({
 })
 
 const elapsedSeconds = computed(() => {
-  if (roundCompleted.value) return 0
-  return Math.max(0, Math.floor((nowTimestamp.value - roundStartedAt.value) / 1000))
+  const endTimestamp = isTimerPaused.value && pausedAtTimestamp.value
+    ? pausedAtTimestamp.value
+    : nowTimestamp.value
+
+  const elapsedMs = endTimestamp - roundStartedAt.value - pausedDurationMs.value
+  return Math.max(0, Math.floor(elapsedMs / 1000))
 })
 
 const currentTimeBonus = computed(() => calculateTimeBonus(elapsedSeconds.value))
@@ -456,6 +527,47 @@ function toggleHistory() {
   isHistoryOpen.value = !isHistoryOpen.value
 }
 
+function pauseRoundTimer() {
+  if (isTimerPaused.value || isLoading.value || noMovies.value || roundCompleted.value) return
+
+  isTimerPaused.value = true
+  pausedAtTimestamp.value = Date.now()
+}
+
+function resumeRoundTimer() {
+  if (!isTimerPaused.value) return
+
+  if (pausedAtTimestamp.value) {
+    pausedDurationMs.value += Math.max(0, Date.now() - pausedAtTimestamp.value)
+  }
+
+  pausedAtTimestamp.value = null
+  isTimerPaused.value = false
+}
+
+function openRulesModal() {
+  isHistoryOpen.value = false
+  isRulesOpen.value = true
+  pauseRoundTimer()
+}
+
+async function closeRulesModal() {
+  isRulesOpen.value = false
+  hasSeenRulesOnce.value = true
+
+  if (!hasBootstrappedRound.value) {
+    hasBootstrappedRound.value = true
+    await fetchRandomMovie()
+    return
+  }
+
+  resumeRoundTimer()
+}
+
+function handleRulesRequested() {
+  openRulesModal()
+}
+
 function handleSeenMovie() {
   const payload = createCollectionPayload()
   if (!payload) return
@@ -468,6 +580,7 @@ function goToMovieDetails() {
 
   persistGameProgress()
   persistCurrentRoundSnapshot()
+  sessionStorage.setItem(suppressAutoRulesOnceKey, "1")
   router.push({ name: 'movie-details', params: { id: currentMovieId.value }, query: { from: 'game' } })
 }
 
@@ -477,11 +590,14 @@ function goToCollection() {
     persistCurrentRoundSnapshot()
   }
 
+  sessionStorage.setItem(suppressAutoRulesOnceKey, "1")
+
   router.push({ name: 'collection', query: { tab: 'found' } })
 }
 
 function handleNewGameRequested() {
   resetGameProgress()
+  hasBootstrappedRound.value = true
   fetchRandomMovie()
 }
 
@@ -588,7 +704,7 @@ function validateGuess() {
   const correct = expectedTitles.includes(guess)
 
   if (correct) {
-    const elapsed = Math.max(0, Math.floor((Date.now() - roundStartedAt.value) / 1000))
+    const elapsed = elapsedSeconds.value
     const hintPenalty = calculateHintPenalty(revealedCards)
     const wrongPenalty = calculateWrongGuessPenalty(wrongGuesses.value)
     const timeBonus = calculateTimeBonus(elapsed)
@@ -650,6 +766,9 @@ async function fetchRandomMovie() {
   wrongGuesses.value = 0
   roundStartedAt.value = Date.now()
   nowTimestamp.value = Date.now()
+  isTimerPaused.value = false
+  pausedAtTimestamp.value = null
+  pausedDurationMs.value = 0
   currentMovieId.value = null
   isCurrentMovieSeen.value = false
   lockYearPopAnimation.value = false
@@ -687,7 +806,7 @@ function skipMovie() {
       passed: true,
       points: 0,
       revealedHints: [revealedCards.genres, revealedCards.year, revealedCards.director, revealedCards.actors].filter(Boolean).length,
-      elapsed: Math.max(0, Math.floor((Date.now() - roundStartedAt.value) / 1000)),
+      elapsed: elapsedSeconds.value,
       streakMultiplier: 1
     })
   )
@@ -712,14 +831,24 @@ onMounted(() => {
   }
 
   const hasRestoredRound = restoreCurrentRoundSnapshot()
-  if (!hasRestoredRound) {
-    fetchRandomMovie()
+  if (hasRestoredRound) {
+    hasBootstrappedRound.value = true
   }
+  hasSeenRulesOnce.value = hasBootstrappedRound.value
+
+  const shouldSuppressAutoRules = sessionStorage.getItem(suppressAutoRulesOnceKey) === "1"
+  sessionStorage.removeItem(suppressAutoRulesOnceKey)
+
+  if (!shouldSuppressAutoRules) {
+    openRulesModal()
+  }
+
   timerInterval = window.setInterval(() => {
     nowTimestamp.value = Date.now()
   }, 1000)
   document.addEventListener("fullscreenchange", updateFullscreenState)
   window.addEventListener("cine:new-game", handleNewGameRequested)
+  window.addEventListener("cine:open-rules", handleRulesRequested)
   window.addEventListener("beforeunload", handleBeforeUnload)
   window.addEventListener("pagehide", handlePageHide)
 })
@@ -730,6 +859,7 @@ onUnmounted(() => {
   }
   document.removeEventListener("fullscreenchange", updateFullscreenState)
   window.removeEventListener("cine:new-game", handleNewGameRequested)
+  window.removeEventListener("cine:open-rules", handleRulesRequested)
   window.removeEventListener("beforeunload", handleBeforeUnload)
   window.removeEventListener("pagehide", handlePageHide)
 })
@@ -1439,6 +1569,125 @@ onUnmounted(() => {
   color: #b91c1c;
 }
 
+.rules-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+  padding: 1rem;
+}
+
+.rules-modal {
+  width: min(860px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(2, 6, 23, 0.35);
+  padding: 1.25rem;
+}
+
+.rules-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.rules-header h2 {
+  margin: 0;
+  font-family: "Playfair Display", serif;
+  font-style: italic;
+  font-size: 1.75rem;
+}
+
+.rules-close {
+  border: 1px solid #0f766e;
+  background: #0f766e;
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 0.45rem 1rem;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.rules-close:hover,
+.rules-close:focus-visible {
+  background: #0b5f5a;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.rules-intro {
+  margin: 0.8rem 0 0 0;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.rules-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.rules-card {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.85rem;
+  background: color-mix(in srgb, var(--bg-hidden) 45%, var(--bg-card));
+}
+
+.rules-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.rules-card ul {
+  margin: 0.65rem 0 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-main);
+  line-height: 1.45;
+}
+
+.rules-btn-tag {
+  font-weight: 800;
+}
+
+.rules-btn-tag.pass {
+  color: #b91c1c;
+}
+
+.rules-btn-tag.next,
+.rules-btn-tag.new-game {
+  color: #0f766e;
+}
+
+.rules-btn-tag.seen {
+  color: #be185d;
+}
+
+.rules-btn-tag.discover {
+  color: #92400e;
+}
+
+.rules-btn-tag.collection {
+  color: #b88900;
+}
+
+.rules-footnote {
+  margin: 0.9rem 0 0 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 @media (max-width: 760px) {
   .game-toolbar {
     flex-wrap: wrap;
@@ -1477,6 +1726,15 @@ onUnmounted(() => {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.4rem;
+  }
+
+  .rules-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rules-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

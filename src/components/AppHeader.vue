@@ -12,7 +12,7 @@
           <span v-else>🌙</span>
         </button>
 
-        <button class="btn btn-secondary">Règles</button>
+        <button class="btn btn-secondary" @click="openRules">Règles</button>
         <button class="btn btn-primary" @click="reloadPage">Nouvelle partie</button>
       </nav>
     </div>
@@ -39,6 +39,10 @@ onMounted(() => {
 
 function reloadPage() {
   window.dispatchEvent(new CustomEvent("cine:new-game"))
+}
+
+function openRules() {
+  window.dispatchEvent(new CustomEvent("cine:open-rules"))
 }
 </script>
 
@@ -114,6 +118,13 @@ function reloadPage() {
   background: transparent;
   border: 2px solid var(--border-color);
   color: var(--text-main);
+}
+
+.btn-secondary:hover,
+.btn-secondary:focus-visible {
+  transform: translateY(-2px);
+  border-color: #94a3b8;
+  background: color-mix(in srgb, var(--bg-hidden) 55%, var(--bg-card));
 }
 
 .btn-primary {
