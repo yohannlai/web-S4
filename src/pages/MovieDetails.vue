@@ -18,21 +18,52 @@
       </div>
 
       <div class="movie-info-section">
-        <h2 class="movie-title">{{ movieData.title }}</h2>
-        <p v-if="movieData.originalTitle" class="original-title">{{ movieData.originalTitle }}</p>
-
         <div class="movie-meta">
-          <div v-if="movieData.year" class="meta-item">
-            <span class="meta-label">Année :</span>
-            <span class="meta-value">{{ movieData.year }}</span>
+          <div class="meta-left">
+            <div class="meta-title-block">
+              <h2 class="movie-title">{{ movieData.title }}</h2>
+              <p v-if="movieData.originalTitle" class="original-title">{{ movieData.originalTitle }}</p>
+            </div>
+            <div class="meta-stats">
+              <div v-if="movieData.year" class="meta-item">
+                <span class="meta-label">Année :</span>
+                <span class="meta-value">{{ movieData.year }}</span>
+              </div>
+              <div v-if="movieData.runtime" class="meta-item">
+                <span class="meta-label">Durée :</span>
+                <span class="meta-value">{{ formatRuntime(movieData.runtime) }}</span>
+              </div>
+              <div v-if="movieData.rating" class="meta-item">
+                <span class="meta-label">Note TMDB :</span>
+                <span class="meta-value">{{ movieData.rating.toFixed(1) }}/10</span>
+              </div>
+            </div>
           </div>
-          <div v-if="movieData.runtime" class="meta-item">
-            <span class="meta-label">Durée :</span>
-            <span class="meta-value">{{ movieData.runtime }} min</span>
-          </div>
-          <div v-if="movieData.rating" class="meta-item">
-            <span class="meta-label">Note TMDB :</span>
-            <span class="meta-value">{{ movieData.rating.toFixed(1) }}/10</span>
+
+          <div class="meta-actions">
+            <button
+              class="details-action-btn seen-btn"
+              :class="{ active: isCurrentMovieSeen }"
+              @click="handleSeenMovie"
+              title="Marquer comme vu"
+            >
+              🍿 J'AI VU CE FILM !
+            </button>
+            <button
+              class="details-action-btn watch-btn"
+              :class="{ active: isCurrentMovieWatchlist }"
+              @click="handleWatchlistMovie"
+              title="Ajouter aux films à voir"
+            >
+              À VOIR !
+            </button>
+            <button
+              class="details-action-btn collection-btn"
+              @click="goToCollection"
+              title="Voir ma collection"
+            >
+              MA COLLECTION
+            </button>
           </div>
         </div>
 
@@ -79,26 +110,107 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { fetchMovieDetailsById } from '../services/api/tmdb.service'
+import {
+  isMovieInSeenCollection,
+  isMovieInWatchlistCollection,
+  removeSeenMovie,
+  removeWatchlistMovie,
+  toggleSeenMovie,
+  toggleWatchlistMovie
+} from '../services/game/collection.service'
 
 const router = useRouter()
 const route = useRoute()
 const movieData = ref(null)
 const isLoading = ref(true)
+const isCurrentMovieSeen = ref(false)
+const isCurrentMovieWatchlist = ref(false)
+
+function getCurrentMovieId() {
+  return Number(route.params.id)
+}
+
+function createCollectionPayload() {
+  if (!movieData.value) return null
+
+  return {
+    movieId: getCurrentMovieId(),
+    title: movieData.value.title,
+    originalTitle: movieData.value.originalTitle,
+    posterUrl: movieData.value.posterUrl,
+    year: movieData.value.year
+  }
+}
+
+function syncCollectionButtonStates() {
+  const movieId = getCurrentMovieId()
+  if (!movieId) {
+    isCurrentMovieSeen.value = false
+    isCurrentMovieWatchlist.value = false
+    return
+  }
+
+  isCurrentMovieSeen.value = isMovieInSeenCollection(movieId)
+  isCurrentMovieWatchlist.value = isMovieInWatchlistCollection(movieId)
+}
 
 function formatNumber(num) {
   return num.toLocaleString('fr-FR')
 }
 
+function formatRuntime(runtimeMinutes) {
+  const total = Number(runtimeMinutes || 0)
+  if (!total) return '0 min'
+
+  const hours = Math.floor(total / 60)
+  const minutes = total % 60
+
+  if (hours === 0) return `${minutes} min`
+  if (minutes === 0) return `${hours} h`
+
+  return `${hours} h ${String(minutes).padStart(2, '0')}`
+}
+
 function goBack() {
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
+
   if (route.query.from === 'collection') {
-    router.push({
-      name: 'collection',
-      query: { tab: typeof route.query.tab === 'string' ? route.query.tab : 'seen' }
-    })
+    router.push({ name: 'collection', query: { tab: typeof route.query.tab === 'string' ? route.query.tab : 'found' } })
     return
   }
 
   router.push({ name: 'game' })
+}
+
+function goToCollection() {
+  router.push({ name: 'collection', query: { tab: 'found' } })
+}
+
+function handleSeenMovie() {
+  const payload = createCollectionPayload()
+  if (!payload) return
+
+  if (!isCurrentMovieSeen.value && isCurrentMovieWatchlist.value) {
+    removeWatchlistMovie(payload.movieId)
+    isCurrentMovieWatchlist.value = false
+  }
+
+  isCurrentMovieSeen.value = toggleSeenMovie(payload)
+}
+
+function handleWatchlistMovie() {
+  const payload = createCollectionPayload()
+  if (!payload) return
+
+  if (!isCurrentMovieWatchlist.value && isCurrentMovieSeen.value) {
+    removeSeenMovie(payload.movieId)
+    isCurrentMovieSeen.value = false
+  }
+
+  isCurrentMovieWatchlist.value = toggleWatchlistMovie(payload)
 }
 
 async function loadMovieDetails() {
@@ -113,6 +225,7 @@ async function loadMovieDetails() {
     const data = await fetchMovieDetailsById(movieId)
     if (data) {
       movieData.value = data
+      syncCollectionButtonStates()
     } else {
       console.error('Impossible de charger les détails du film')
     }
@@ -208,9 +321,11 @@ onMounted(() => {
 .movie-poster {
   width: 100%;
   max-width: 350px;
+  height: auto;
   border-radius: 12px;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-  object-fit: cover;
+  object-fit: contain;
+  display: block;
 }
 
 .poster-placeholder {
@@ -240,23 +355,103 @@ onMounted(() => {
   font-weight: 800;
   color: var(--text-main);
   font-family: "Playfair Display", serif;
+  font-style: italic;
 }
 
 .original-title {
-  margin: 0;
+  margin: 0.3rem 0 0 0;
   font-size: 1rem;
   color: var(--text-muted);
   font-style: italic;
 }
 
-.movie-meta {
+.meta-title-block {
+  width: 100%;
+}
+
+.meta-left {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.8rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.movie-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 2rem;
   padding: 1rem;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 8px;
+}
+
+.meta-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+}
+
+.meta-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  align-items: stretch;
+  min-width: 220px;
+}
+
+.details-action-btn {
+  border: 2px solid currentColor;
+  background: var(--bg-card);
+  border-radius: 999px;
+  padding: 0.46rem 0.9rem;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.details-action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.seen-btn {
+  color: #be185d;
+}
+
+.seen-btn:hover {
+  background-color: rgba(190, 24, 93, 0.08);
+}
+
+.seen-btn.active {
+  background-color: #be185d;
+  color: #ffffff;
+  border-color: #be185d;
+}
+
+.watch-btn {
+  color: #7e22ce;
+}
+
+.watch-btn.active {
+  background-color: #7e22ce;
+  color: #ffffff;
+  border-color: #7e22ce;
+}
+
+.collection-btn {
+  border-radius: 12px;
+  color: #0d9488;
+}
+
+.collection-btn:hover {
+  background-color: rgba(13, 148, 136, 0.08);
 }
 
 .meta-item {
@@ -355,8 +550,12 @@ onMounted(() => {
   }
 
   .movie-meta {
-    flex-direction: column;
+    grid-template-columns: 1fr;
     gap: 0.5rem;
+  }
+
+  .meta-actions {
+    min-width: 0;
   }
 }
 </style>

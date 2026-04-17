@@ -163,7 +163,7 @@
           ✓
         </button>
         <button @click="goToCollection" class="collection-nav-btn" title="Voir ma collection">
-          Collection
+          MA COLLECTION
         </button>
       </div>
     </div>
@@ -465,7 +465,7 @@ function goToCollection() {
     persistCurrentRoundSnapshot()
   }
 
-  router.push({ name: 'collection', query: { tab: 'seen' } })
+  router.push({ name: 'collection', query: { tab: 'found' } })
 }
 
 function handleNewGameRequested() {
@@ -1030,19 +1030,19 @@ onUnmounted(() => {
 }
 
 .seen-btn {
-  color: #92400e;
-}
-
-.seen-btn:hover {
-  background-color: rgba(146, 64, 14, 0.08);
-}
-
-.discover-btn {
   color: #be185d;
 }
 
-.discover-btn:hover {
+.seen-btn:hover {
   background-color: rgba(190, 24, 93, 0.08);
+}
+
+.discover-btn {
+  color: #92400e;
+}
+
+.discover-btn:hover {
+  background-color: rgba(146, 64, 14, 0.08);
 }
 
 /* --- GRIDS --- */
@@ -1176,9 +1176,9 @@ onUnmounted(() => {
 }
 
 .seen-btn.active {
-  background-color: #92400e;
+  background-color: #be185d;
   color: #ffffff;
-  border-color: #92400e;
+  border-color: #be185d;
 }
 
 .validate-btn:hover:not(:disabled) {

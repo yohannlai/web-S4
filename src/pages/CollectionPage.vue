@@ -15,11 +15,11 @@
       </div>
 
       <div class="collection-tabs" role="tablist" aria-label="Onglets de collection">
-        <button class="tab-btn" :class="{ active: activeTab === 'seen' }" @click="switchTab('seen')" role="tab">
-          Films vus
-        </button>
         <button class="tab-btn" :class="{ active: activeTab === 'found' }" @click="switchTab('found')" role="tab">
           Films trouvés
+        </button>
+        <button class="tab-btn" :class="{ active: activeTab === 'seen' }" @click="switchTab('seen')" role="tab">
+          Films vus
         </button>
         <button class="tab-btn" :class="{ active: activeTab === 'watchlist' }" @click="switchTab('watchlist')" role="tab">
           Films à voir
@@ -27,12 +27,14 @@
       </div>
 
       <section class="tab-panel" role="tabpanel">
-        <p v-if="activeTab === 'watchlist'" class="placeholder-text">
-          Cet onglet sera implémenté dans une prochaine étape.
-        </p>
-
-        <p v-else-if="activeMovies.length === 0" class="placeholder-text">
-          {{ activeTab === 'seen' ? 'Aucun film vu pour le moment.' : 'Aucun film trouvé pour le moment.' }}
+        <p v-if="activeMovies.length === 0" class="placeholder-text">
+          {{
+            activeTab === 'found'
+              ? 'Aucun film trouvé pour le moment.'
+              : activeTab === 'seen'
+                ? 'Aucun film vu pour le moment.'
+                : 'Aucun film dans "Films à voir" pour le moment.'
+          }}
         </p>
 
         <div v-else class="poster-grid">
@@ -40,7 +42,7 @@
             v-for="movie in activeMovies"
             :key="`${activeTab}-${movie.movieId}`"
             class="poster-tile"
-            :class="{ removable: activeTab !== 'watchlist' }"
+            :class="{ removable: true }"
             @click="openMovieDetails(movie)"
           >
             <div class="tile-poster-wrap">
@@ -50,7 +52,6 @@
               </div>
 
               <button
-                v-if="activeTab !== 'watchlist'"
                 class="remove-btn"
                 title="Retirer de la collection"
                 @click.stop="removeMovie(movie)"
@@ -84,11 +85,11 @@ const route = useRoute()
 const router = useRouter()
 const collection = ref(getMovieCollection())
 
-const validTabs = ['seen', 'found', 'watchlist']
+const validTabs = ['found', 'seen', 'watchlist']
 
 const activeTab = computed(() => {
-  const tabQuery = typeof route.query.tab === 'string' ? route.query.tab : 'seen'
-  return validTabs.includes(tabQuery) ? tabQuery : 'seen'
+  const tabQuery = typeof route.query.tab === 'string' ? route.query.tab : 'found'
+  return validTabs.includes(tabQuery) ? tabQuery : 'found'
 })
 
 const activeMovies = computed(() => {
@@ -192,6 +193,7 @@ onUnmounted(() => {
   margin: 0;
   font-family: 'Playfair Display', serif;
   font-size: 2rem;
+  font-style: italic;
 }
 
 .collection-header p {
@@ -323,6 +325,7 @@ onUnmounted(() => {
   font-size: 0.95rem;
   line-height: 1.25;
   font-family: 'Outfit', sans-serif;
+  font-style: italic;
 }
 
 .tile-meta p {

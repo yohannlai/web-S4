@@ -64,6 +64,11 @@ export function isMovieInSeenCollection(movieId) {
   return collection.seen.some((movie) => movie.movieId === movieId)
 }
 
+export function isMovieInWatchlistCollection(movieId) {
+  const collection = readRawCollection()
+  return collection.watchlist.some((movie) => movie.movieId === movieId)
+}
+
 export function toggleSeenMovie(movie) {
   const collection = readRawCollection()
   const alreadySeen = collection.seen.some((entry) => entry.movieId === movie.movieId)
@@ -83,6 +88,27 @@ export function addFoundMovie(movie) {
   const collection = readRawCollection()
   collection.found = upsertMovie(collection.found, movie)
   writeRawCollection(collection)
+}
+
+export function addWatchlistMovie(movie) {
+  const collection = readRawCollection()
+  collection.watchlist = upsertMovie(collection.watchlist, movie)
+  writeRawCollection(collection)
+}
+
+export function toggleWatchlistMovie(movie) {
+  const collection = readRawCollection()
+  const alreadyWatchlisted = collection.watchlist.some((entry) => entry.movieId === movie.movieId)
+
+  if (alreadyWatchlisted) {
+    collection.watchlist = collection.watchlist.filter((entry) => entry.movieId !== movie.movieId)
+    writeRawCollection(collection)
+    return false
+  }
+
+  collection.watchlist = upsertMovie(collection.watchlist, movie)
+  writeRawCollection(collection)
+  return true
 }
 
 export function removeMovieFromCollectionList(listName, movieId) {
