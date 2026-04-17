@@ -5,10 +5,20 @@
 
     <div v-else class="game-shell">
       <div class="game-toolbar">
-        <button v-if="!roundCompleted" class="toolbar-btn pass-btn" @click="skipMovie">
-          Passer
-        </button>
-        <div v-else class="toolbar-spacer"></div>
+        <div class="toolbar-left">
+          <div v-if="revealedCards.poster" class="poster-actions">
+            <button class="toolbar-btn action-btn seen-btn" @click="handleSeenMovie" title="Marquer comme vu">
+              🍿 J'AI VU CE FILM !
+            </button>
+            <button class="toolbar-btn action-btn discover-btn" @click="goToMovieDetails" title="Voir les détails">
+              🎬 DÉCOUVRIR CE FILM
+            </button>
+          </div>
+          <button v-else-if="!roundCompleted" class="toolbar-btn pass-btn" @click="skipMovie">
+            Passer
+          </button>
+          <div v-else class="toolbar-spacer"></div>
+        </div>
 
         <div class="score-zone">
           <button
@@ -24,22 +34,26 @@
           <p v-if="!roundCompleted" class="time-bonus">Bonus temps: +{{ currentTimeBonus }}</p>
         </div>
 
-        <button v-if="roundCompleted" class="toolbar-btn next-btn" @click="fetchRandomMovie">
-          Suivant
-        </button>
-        <div v-else class="toolbar-spacer"></div>
+        <div class="toolbar-right">
+          <button v-if="roundCompleted" class="toolbar-btn next-btn" @click="fetchRandomMovie">
+            Suivant
+          </button>
+          <div v-else class="toolbar-spacer"></div>
+        </div>
       </div>
 
       <div class="movie-grid">
-      <div
-        class="poster-card card"
-        :class="{ 'locked': !revealedCards.poster, 'reveal-burst': isRevealAnimating && animateCards.poster }"
-      >
-        <img v-if="revealedCards.poster" :src="posterUrl" alt="Affiche du film" />
-        <div v-else class="hidden-content">
-          <p class="hidden-label">
-            <span>🔒 </span>Affiche
-          </p>
+      <div class="poster-wrapper">
+        <div
+          class="poster-card card"
+          :class="{ 'locked': !revealedCards.poster, 'reveal-burst': isRevealAnimating && animateCards.poster }"
+        >
+          <img v-if="revealedCards.poster" :src="posterUrl" alt="Affiche du film" />
+          <div v-else class="hidden-content">
+            <p class="hidden-label">
+              <span>🔒 </span>Affiche
+            </p>
+          </div>
         </div>
       </div>
 
@@ -187,23 +201,23 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, reactive, computed } from "vue"
+import { useRouter } from "vue-router"
+import { fetchMovieSuggestions, fetchRandomRoundMovie } from "../services/api/tmdb.service"
+import {
+  competitiveConfig,
+  calculateHintPenalty,
+  calculateWrongGuessPenalty,
+  calculateTimeBonus,
+  calculateStreakMultiplier,
+  createRoundHistoryEntry,
+  persistCompetitiveState,
+  restoreCompetitiveState,
+  clearCompetitiveState
+} from "../services/game/competitive-game.service"
+import { normalizeTitle, resolveDecadeClass } from "../utils/movie-game.utils"
 
-const COMPETITIVE_CONFIG = {
-  basePoints: 100,
-  minFoundPoints: 20,
-  hintPenalties: {
-    genres: 15,
-    year: 20,
-    director: 25,
-    actors: 30
-  },
-  wrongGuessPenalty: 5,
-  maxWrongGuessPenalty: 20,
-  timeWindowSeconds: 60,
-  timeBonusStepSeconds: 3,
-  storageKey: "cinelogique_competitive_state_v1",
-  resetOnReloadKey: "cinelogique_competitive_reset_on_reload_v1"
-}
+const router = useRouter()
+const roundSnapshotStorageKey = "cine:competitive-round-snapshot"
 
 // --- CARDS STATE ---
 const revealedCards = reactive({
@@ -258,7 +272,7 @@ const elapsedSeconds = computed(() => {
   return Math.max(0, Math.floor((nowTimestamp.value - roundStartedAt.value) / 1000))
 })
 
-const currentTimeBonus = computed(() => getTimeBonus(elapsedSeconds.value))
+const currentTimeBonus = computed(() => calculateTimeBonus(elapsedSeconds.value))
 
 const hasProgressToLose = computed(() => {
   const hasScoreOrHistory = totalScore.value > 0 || gameHistory.value.length > 0
@@ -267,29 +281,7 @@ const hasProgressToLose = computed(() => {
 })
 
 function setDecadeFont(year) {
-  const decade = Math.floor(year / 10) * 10
-  const classes = {
-    1950: "year-50", 1960: "year-60", 1970: "year-70",
-    1980: "year-80", 1990: "year-90", 2000: "year-2000",
-    2010: "year-2010"
-  }
-  decadeClass.value = classes[decade] || "year-2020"
-}
-
-const API_KEY = import.meta.env.VITE_TMDB_API_KEY
-const IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
-
-function randomBetween(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min
-}
-
-function normalizeTitle(value) {
-  return (value || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
+  decadeClass.value = resolveDecadeClass(year)
 }
 
 function revealAllCards() {
@@ -307,88 +299,133 @@ function revealAllCards() {
   }, 500)
 }
 
-function getHintPenalty() {
-  let penalty = 0
-  if (revealedCards.genres) penalty += COMPETITIVE_CONFIG.hintPenalties.genres
-  if (revealedCards.year) penalty += COMPETITIVE_CONFIG.hintPenalties.year
-  if (revealedCards.director) penalty += COMPETITIVE_CONFIG.hintPenalties.director
-  if (revealedCards.actors) penalty += COMPETITIVE_CONFIG.hintPenalties.actors
-  return penalty
-}
-
-function getWrongGuessPenalty() {
-  return Math.min(
-    wrongGuesses.value * COMPETITIVE_CONFIG.wrongGuessPenalty,
-    COMPETITIVE_CONFIG.maxWrongGuessPenalty
-  )
-}
-
-function getTimeBonus(durationSeconds) {
-  return Math.max(
-    0,
-    Math.floor((COMPETITIVE_CONFIG.timeWindowSeconds - durationSeconds) / COMPETITIVE_CONFIG.timeBonusStepSeconds)
-  )
-}
-
-function getStreakMultiplier(nextStreak) {
-  if (nextStreak >= 5) return 1.2
-  if (nextStreak >= 3) return 1.1
-  return 1
-}
-
-function buildRoundEntry({ passed, points = 0, revealedHints = 0, elapsed = 0, streakMultiplier = 1 }) {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    round: gameHistory.value.length + 1,
-    movieId: currentMovieId.value,
+function createRoundEntryForHistory({ passed, points = 0, revealedHints = 0, elapsed = 0, streakMultiplier = 1 }) {
+  return createRoundHistoryEntry({
+    historyLength: gameHistory.value.length,
+    currentMovieId: currentMovieId.value,
     title: title.value,
     originalTitle: originalTitle.value,
     passed,
     points,
     revealedHints,
     wrongGuesses: wrongGuesses.value,
-    elapsedSeconds: elapsed,
-    streakMultiplier,
-    playedAt: new Date().toISOString()
-  }
+    elapsed,
+    streakMultiplier
+  })
 }
 
-function saveCompetitiveState() {
-  const payload = {
+function persistGameProgress() {
+  persistCompetitiveState({
     totalScore: totalScore.value,
     streak: streak.value,
     gameHistory: gameHistory.value
-  }
-  localStorage.setItem(COMPETITIVE_CONFIG.storageKey, JSON.stringify(payload))
+  })
 }
 
-function loadCompetitiveState() {
+function persistCurrentRoundSnapshot() {
+  const snapshot = {
+    revealedCards: { ...revealedCards },
+    posterUrl: posterUrl.value,
+    year: year.value,
+    genres: genres.value,
+    director: director.value,
+    actors: actors.value,
+    title: title.value,
+    originalTitle: originalTitle.value,
+    decadeClass: decadeClass.value,
+    currentMovieId: currentMovieId.value,
+    searchInput: searchInput.value,
+    wrongGuesses: wrongGuesses.value,
+    roundStartedAt: roundStartedAt.value,
+    roundCompleted: roundCompleted.value
+  }
+
+  sessionStorage.setItem(roundSnapshotStorageKey, JSON.stringify(snapshot))
+}
+
+function restoreCurrentRoundSnapshot() {
   try {
-    const raw = localStorage.getItem(COMPETITIVE_CONFIG.storageKey)
-    if (!raw) return
-    const parsed = JSON.parse(raw)
-    totalScore.value = Number(parsed.totalScore) || 0
-    streak.value = Number(parsed.streak) || 0
-    gameHistory.value = Array.isArray(parsed.gameHistory) ? parsed.gameHistory : []
+    const rawSnapshot = sessionStorage.getItem(roundSnapshotStorageKey)
+    if (!rawSnapshot) return false
+
+    const snapshot = JSON.parse(rawSnapshot)
+
+    Object.keys(revealedCards).forEach((key) => {
+      revealedCards[key] = Boolean(snapshot.revealedCards?.[key])
+    })
+
+    posterUrl.value = snapshot.posterUrl || ""
+    year.value = snapshot.year || ""
+    genres.value = Array.isArray(snapshot.genres) ? snapshot.genres : []
+    director.value = snapshot.director || ""
+    actors.value = Array.isArray(snapshot.actors) ? snapshot.actors : []
+    title.value = snapshot.title || ""
+    originalTitle.value = snapshot.originalTitle || ""
+    decadeClass.value = snapshot.decadeClass || ""
+    currentMovieId.value = snapshot.currentMovieId || null
+    searchInput.value = snapshot.searchInput || ""
+    wrongGuesses.value = Number(snapshot.wrongGuesses || 0)
+    roundStartedAt.value = Number(snapshot.roundStartedAt || Date.now())
+    roundCompleted.value = Boolean(snapshot.roundCompleted)
+
+    suggestions.value = []
+    searchFeedback.value = null
+    highlightedSuggestionIndex.value = -1
+    isRevealAnimating.value = false
+    nowTimestamp.value = Date.now()
+    noMovies.value = false
+    isLoading.value = false
+
+    return Boolean(currentMovieId.value && title.value)
+  } catch (error) {
+    console.error("Erreur de restauration de la manche:", error)
+    return false
+  }
+}
+
+function clearCurrentRoundSnapshot() {
+  sessionStorage.removeItem(roundSnapshotStorageKey)
+}
+
+function restoreGameProgress() {
+  try {
+    const state = restoreCompetitiveState()
+    totalScore.value = state.totalScore
+    streak.value = state.streak
+    gameHistory.value = state.gameHistory
   } catch (error) {
     console.error("Erreur de lecture du cache compétitif:", error)
   }
 }
 
-function resetCompetitiveState() {
+function resetGameProgress() {
   totalScore.value = 0
   streak.value = 0
   gameHistory.value = []
   isHistoryOpen.value = false
-  localStorage.removeItem(COMPETITIVE_CONFIG.storageKey)
+  clearCompetitiveState()
+  clearCurrentRoundSnapshot()
 }
 
 function toggleHistory() {
   isHistoryOpen.value = !isHistoryOpen.value
 }
 
+function handleSeenMovie() {
+  // TODO: "J'AI VU CE FILM !"
+  console.log("Marqué comme vu:", title.value)
+}
+
+function goToMovieDetails() {
+  if (!currentMovieId.value) return
+
+  persistGameProgress()
+  persistCurrentRoundSnapshot()
+  router.push({ name: 'movie-details', params: { id: currentMovieId.value } })
+}
+
 function handleNewGameRequested() {
-  resetCompetitiveState()
+  resetGameProgress()
   fetchRandomMovie()
 }
 
@@ -400,7 +437,7 @@ function handleBeforeUnload(event) {
 
 function handlePageHide() {
   if (!hasProgressToLose.value) return
-  localStorage.setItem(COMPETITIVE_CONFIG.resetOnReloadKey, "1")
+  localStorage.setItem(competitiveConfig.resetOnReloadKey, "1")
 }
 
 async function updateSuggestions() {
@@ -412,19 +449,7 @@ async function updateSuggestions() {
   }
 
   try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/search/movie?api_key=${API_KEY}&language=fr-FR&query=${encodeURIComponent(searchInput.value)}`
-    )
-    const data = await res.json()
-    suggestions.value = data.results.slice(0, 5).map(movie => ({
-      id: movie.id,
-      title: movie.title,
-      originalTitle: movie.original_title,
-      showOriginal:
-        movie.original_language !== "fr" &&
-        movie.original_title &&
-        movie.original_title !== movie.title
-    }))
+    suggestions.value = await fetchMovieSuggestions(searchInput.value)
   } catch (error) {
     console.error("Erreur suggestions:", error)
     suggestions.value = []
@@ -491,19 +516,19 @@ function validateGuess() {
 
   if (correct) {
     const elapsed = Math.max(0, Math.floor((Date.now() - roundStartedAt.value) / 1000))
-    const hintPenalty = getHintPenalty()
-    const wrongPenalty = getWrongGuessPenalty()
-    const timeBonus = getTimeBonus(elapsed)
+    const hintPenalty = calculateHintPenalty(revealedCards)
+    const wrongPenalty = calculateWrongGuessPenalty(wrongGuesses.value)
+    const timeBonus = calculateTimeBonus(elapsed)
     const nextStreak = streak.value + 1
-    const streakMultiplier = getStreakMultiplier(nextStreak)
-    const rawScore = COMPETITIVE_CONFIG.basePoints - hintPenalty - wrongPenalty + timeBonus
-    const safeScore = Math.max(COMPETITIVE_CONFIG.minFoundPoints, rawScore)
+    const streakMultiplier = calculateStreakMultiplier(nextStreak)
+    const rawScore = competitiveConfig.basePoints - hintPenalty - wrongPenalty + timeBonus
+    const safeScore = Math.max(competitiveConfig.minFoundPoints, rawScore)
     const finalScore = Math.round(safeScore * streakMultiplier)
 
     totalScore.value += finalScore
     streak.value = nextStreak
     gameHistory.value.unshift(
-      buildRoundEntry({
+      createRoundEntryForHistory({
         passed: false,
         points: finalScore,
         revealedHints: [revealedCards.genres, revealedCards.year, revealedCards.director, revealedCards.actors].filter(Boolean).length,
@@ -511,7 +536,7 @@ function validateGuess() {
         streakMultiplier
       })
     )
-    saveCompetitiveState()
+    persistGameProgress()
 
     searchFeedback.value = 'correct'
     revealAllCards()
@@ -534,6 +559,7 @@ function validateGuess() {
 }
 
 async function fetchRandomMovie() {
+  clearCurrentRoundSnapshot()
   Object.keys(revealedCards).forEach(key => revealedCards[key] = false)
   Object.keys(animateCards).forEach(key => animateCards[key] = false)
   isLoading.value = true
@@ -549,73 +575,35 @@ async function fetchRandomMovie() {
   nowTimestamp.value = Date.now()
   currentMovieId.value = null
 
-  let attempts = 0
-  let movieFound = false
+  let movieData = null
 
-  while (!movieFound && attempts < 5) {
-    attempts++
-    const randomYear = randomBetween(1960, 2026)
-    const randomPage = randomBetween(1, 5)
-
-    try {
-      const discoverRes = await fetch(
-        `https://api.themoviedb.org/3/discover/movie?api_key=${API_KEY}&language=fr-FR&sort_by=vote_average.desc&vote_count.gte=500&primary_release_year=${randomYear}&page=${randomPage}`
-      )
-      const discoverData = await discoverRes.json()
-      const movies = discoverData.results
-      if (!movies?.length) continue
-
-      const randomMovie = movies[randomBetween(0, movies.length - 1)]
-      if (!randomMovie.poster_path) continue
-      currentMovieId.value = randomMovie.id
-
-      const movieRes = await fetch(`https://api.themoviedb.org/3/movie/${randomMovie.id}?api_key=${API_KEY}&language=fr-FR`)
-      const movieData = await movieRes.json()
-
-      const creditsRes = await fetch(`https://api.themoviedb.org/3/movie/${randomMovie.id}/credits?api_key=${API_KEY}`)
-      const creditsData = await creditsRes.json()
-
-      posterUrl.value = IMAGE_BASE + movieData.poster_path
-      year.value = movieData.release_date?.slice(0, 4)
-      setDecadeFont(Number(year.value))
-      genres.value = movieData.genres.map(g => g.name)
-      title.value = movieData.title
-
-      if (movieData.original_language !== 'fr' && movieData.original_title !== movieData.title)
-      {
-        originalTitle.value = movieData.original_title
-      }
-      else
-      {
-        originalTitle.value = ""
-      }
-
-      const allDirectors = creditsData.crew.filter(p => p.job === "Director")
-      if (allDirectors.length > 0)
-      {
-        director.value = allDirectors.map(d => d.name).join(", ")
-      }
-      else
-      {
-        director.value = "Inconnu"
-      }
-
-      actors.value = creditsData.cast.slice(0, 3).map(a => a.name)
-
-      movieFound = true
-    } catch (error) {
-      console.error("Erreur API:", error)
-    }
+  try {
+    movieData = await fetchRandomRoundMovie({ minYear: 1960, maxYear: 2026, maxAttempts: 5 })
+  } catch (error) {
+    console.error("Erreur API:", error)
   }
+
+  if (movieData) {
+    currentMovieId.value = movieData.movieId
+    posterUrl.value = movieData.posterUrl
+    year.value = movieData.year
+    setDecadeFont(Number(year.value))
+    genres.value = movieData.genres
+    title.value = movieData.title
+    originalTitle.value = movieData.originalTitle
+    director.value = movieData.director
+    actors.value = movieData.actors
+  }
+
   isLoading.value = false
-  if (!movieFound) noMovies.value = true
+  if (!movieData) noMovies.value = true
 }
 
 function skipMovie() {
   if (roundCompleted.value) return
 
   gameHistory.value.unshift(
-    buildRoundEntry({
+    createRoundEntryForHistory({
       passed: true,
       points: 0,
       revealedHints: [revealedCards.genres, revealedCards.year, revealedCards.director, revealedCards.actors].filter(Boolean).length,
@@ -624,7 +612,7 @@ function skipMovie() {
     })
   )
   streak.value = 0
-  saveCompetitiveState()
+  persistGameProgress()
 
   revealAllCards()
   roundCompleted.value = true
@@ -635,15 +623,18 @@ function skipMovie() {
 }
 
 onMounted(() => {
-  const mustResetAfterReload = localStorage.getItem(COMPETITIVE_CONFIG.resetOnReloadKey) === "1"
+  const mustResetAfterReload = localStorage.getItem(competitiveConfig.resetOnReloadKey) === "1"
   if (mustResetAfterReload) {
-    localStorage.removeItem(COMPETITIVE_CONFIG.resetOnReloadKey)
-    resetCompetitiveState()
+    localStorage.removeItem(competitiveConfig.resetOnReloadKey)
+    resetGameProgress()
   } else {
-    loadCompetitiveState()
+    restoreGameProgress()
   }
 
-  fetchRandomMovie()
+  const hasRestoredRound = restoreCurrentRoundSnapshot()
+  if (!hasRestoredRound) {
+    fetchRandomMovie()
+  }
   timerInterval = window.setInterval(() => {
     nowTimestamp.value = Date.now()
   }, 1000)
@@ -689,8 +680,8 @@ onUnmounted(() => {
 
 .game-toolbar {
   width: 100%;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 1rem;
   margin-bottom: 1rem;
@@ -699,6 +690,22 @@ onUnmounted(() => {
 .toolbar-spacer {
   width: 1px;
   height: 1px;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  justify-content: flex-end;
 }
 
 .toolbar-btn {
@@ -768,6 +775,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: 0.3rem;
+  justify-self: center;
 }
 
 .time-bonus {
@@ -937,6 +945,56 @@ onUnmounted(() => {
   display: block;
 }
 
+/* --- POSTER WRAPPER & ACTIONS --- */
+.poster-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.poster-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: slideUp 0.4s ease-out;
+  flex-wrap: nowrap;
+}
+
+.action-btn {
+  min-height: 34px;
+  padding: 0.28rem 0.65rem;
+  border: 2px solid currentColor;
+  font-weight: 700;
+  font-size: 0.66rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+}
+
+.seen-btn {
+  color: #92400e;
+}
+
+.seen-btn:hover {
+  background-color: rgba(146, 64, 14, 0.08);
+}
+
+.discover-btn {
+  color: #be185d;
+}
+
+.discover-btn:hover {
+  background-color: rgba(190, 24, 93, 0.08);
+}
+
 /* --- GRIDS --- */
 .right-grid {
   display: grid;
@@ -964,6 +1022,11 @@ onUnmounted(() => {
 
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -1256,6 +1319,24 @@ onUnmounted(() => {
 
 @media (max-width: 760px) {
   .game-toolbar {
+    flex-wrap: wrap;
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .toolbar-left {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-right {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .poster-actions {
     flex-wrap: wrap;
     justify-content: center;
   }

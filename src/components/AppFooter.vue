@@ -1,7 +1,7 @@
 <template>
   <footer class="app-footer">
     <div class="footer-content">
-      <p class="copyright">© 2026 Cinélogique · Projet étudiant IMAC</p>
+      <p class="copyright">© 2026 Cinélogique · Yohann LAI · Projet étudiant IMAC</p>
       <p class="api-credit">Données fournies par l’API TMDB</p>
     </div>
   </footer>

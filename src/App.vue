@@ -1,15 +1,8 @@
 <template>
-  <AppHeader />
-  <main class="app-main">
-    <GameArea />
-  </main>
-  <AppFooter />
+  <router-view />
 </template>
 
 <script setup>
-import AppHeader from "./components/AppHeader.vue"
-import AppFooter from "./components/AppFooter.vue"
-import GameArea from "./components/GameArea.vue"
 </script>
 
 <style>
