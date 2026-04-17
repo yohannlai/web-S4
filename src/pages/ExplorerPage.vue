@@ -20,7 +20,13 @@
         </button>
       </div>
 
-      <section class="explorer-controls" aria-label="Filtres et tri des films">
+      <div v-if="isCompactFilters" class="explorer-controls-toggle">
+        <button class="back-btn compact-btn" @click="toggleFiltersPanel">
+          {{ isFiltersOpen ? 'Masquer les filtres' : 'Afficher les filtres' }}
+        </button>
+      </div>
+
+      <section v-show="!isCompactFilters || isFiltersOpen" class="explorer-controls" aria-label="Filtres et tri des films">
         <label class="control-field search-field">
           <span>Recherche globale</span>
           <input v-model="searchQuery" type="search" placeholder="Ex : Inception, Parasite, Le Parrain..." />
@@ -96,6 +102,11 @@
             class="poster-tile explorer-tile"
             :class="resolveDecadeClass(Number(movie.year) || 0)"
             @click="openMovieDetails(movie)"
+            @keydown.enter.prevent="openMovieDetails(movie)"
+            @keydown.space.prevent="openMovieDetails(movie)"
+            role="button"
+            tabindex="0"
+            :aria-label="`Ouvrir les details de ${movie.title}`"
           >
             <div class="tile-poster-wrap">
               <img v-if="movie.posterUrl" :src="movie.posterUrl" :alt="movie.title" class="tile-poster" />
@@ -115,22 +126,23 @@
         </div>
 
         <nav v-if="visiblePageNumbers.length > 1" class="pagination" aria-label="Pagination des films">
-          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">←</button>
+          <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)" aria-label="Page precedente">←</button>
           <button
             v-for="page in visiblePageNumbers"
             :key="page"
             class="page-btn"
             :class="{ active: page === currentPage }"
             @click="goToPage(page)"
+            :aria-label="`Aller a la page ${page}`"
           >
             {{ page }}
           </button>
-          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">→</button>
+          <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)" aria-label="Page suivante">→</button>
         </nav>
       </section>
     </section>
 
-    <button class="collection-nav-btn explorer-floating-collection-btn" @click="goToCollection" title="Voir ma collection">
+    <button class="collection-nav-btn explorer-floating-collection-btn" @click="goToCollection" title="Voir ma collection" aria-label="Voir ma collection">
       🎟️ MA COLLECTION
     </button>
   </main>
@@ -142,7 +154,14 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppFooter from '../components/AppFooter.vue'
 import AppHeader from '../components/AppHeader.vue'
+import { useFullscreen } from '../composables/useFullscreen'
 import { fetchMovieCountries, fetchMovieExplorerPage, fetchMovieGenres } from '../services/api/tmdb.service'
+import {
+  buildExplorerRouteQuery,
+  discoverSortByMap,
+  explorerSortOptions,
+  hydrateExplorerFiltersFromRoute
+} from '../services/explorer/explorer-filters.service'
 import { resolveDecadeClass } from '../utils/movie-game.utils'
 
 const router = useRouter()
@@ -157,7 +176,7 @@ const genreOptions = ref([])
 const countryOptions = ref([])
 const isLoading = ref(true)
 const loadError = ref('')
-const isFullscreen = ref(Boolean(document.fullscreenElement))
+const { isFullscreen, toggleFullscreen } = useFullscreen()
 const searchQuery = ref('')
 const appliedSearchQuery = ref('')
 const sortMode = ref('popularity-desc')
@@ -168,14 +187,11 @@ const yearFilter = ref('all')
 const currentPage = ref(1)
 const totalPages = ref(1)
 const totalResults = ref(0)
+const isCompactFilters = ref(false)
+const isFiltersOpen = ref(true)
 let searchDebounceTimer = null
 
-const sortOptions = [
-  { value: 'popularity-desc', label: 'Plus populaires' },
-  { value: 'rating-desc', label: 'Meilleures notes' },
-  { value: 'title-asc', label: 'Titre A-Z' },
-  { value: 'title-desc', label: 'Titre Z-A' }
-]
+const sortOptions = explorerSortOptions
 
 const isYearDisabled = computed(() => decadeFilter.value === 'all')
 
@@ -229,25 +245,16 @@ const visiblePageNumbers = computed(() => {
   return Array.from(new Set(pages))
 })
 
-const discoverSortByMap = {
-  'popularity-desc': 'popularity.desc',
-  'rating-desc': 'vote_average.desc',
-  'title-asc': 'original_title.asc',
-  'title-desc': 'original_title.desc'
-}
-
 function buildRouteQuery() {
-  const query = {}
-
-  if (appliedSearchQuery.value) query.q = appliedSearchQuery.value
-  if (sortMode.value !== 'popularity-desc') query.sort = sortMode.value
-  if (genreFilter.value !== 'all') query.genre = genreFilter.value
-  if (countryFilter.value !== 'all') query.country = countryFilter.value
-  if (decadeFilter.value !== 'all') query.decade = decadeFilter.value
-  if (yearFilter.value !== 'all') query.year = yearFilter.value
-  if (currentPage.value > 1) query.page = String(currentPage.value)
-
-  return query
+  return buildExplorerRouteQuery({
+    searchQuery: appliedSearchQuery.value,
+    sortMode: sortMode.value,
+    genreFilter: genreFilter.value,
+    countryFilter: countryFilter.value,
+    decadeFilter: decadeFilter.value,
+    yearFilter: yearFilter.value,
+    currentPage: currentPage.value
+  })
 }
 
 async function syncRouteQuery() {
@@ -261,21 +268,20 @@ function goToPage(page) {
   currentPage.value = target
 }
 
-function syncFullscreenState() {
-  isFullscreen.value = Boolean(document.fullscreenElement)
+function syncFiltersViewportMode() {
+  const wasCompactMode = isCompactFilters.value
+  const compactMode = window.innerWidth <= 1024
+  isCompactFilters.value = compactMode
+
+  if (!compactMode) {
+    isFiltersOpen.value = true
+  } else if (!wasCompactMode) {
+    isFiltersOpen.value = false
+  }
 }
 
-async function toggleFullscreen() {
-  try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen()
-      return
-    }
-
-    await document.documentElement.requestFullscreen()
-  } catch (error) {
-    console.error('Impossible de changer le mode plein écran:', error)
-  }
+function toggleFiltersPanel() {
+  isFiltersOpen.value = !isFiltersOpen.value
 }
 
 function goBack() {
@@ -321,17 +327,15 @@ function goToCollection() {
 }
 
 function hydrateFiltersFromRoute() {
-  const routeSort = typeof route.query.sort === 'string' ? route.query.sort : 'popularity-desc'
-  const validSort = sortOptions.some((option) => option.value === routeSort)
-
-  searchQuery.value = typeof route.query.q === 'string' ? route.query.q : ''
-  appliedSearchQuery.value = searchQuery.value
-  sortMode.value = validSort ? routeSort : 'popularity-desc'
-  genreFilter.value = typeof route.query.genre === 'string' ? route.query.genre : 'all'
-  countryFilter.value = typeof route.query.country === 'string' ? route.query.country : 'all'
-  decadeFilter.value = typeof route.query.decade === 'string' ? route.query.decade : 'all'
-  yearFilter.value = typeof route.query.year === 'string' ? route.query.year : 'all'
-  currentPage.value = Math.max(1, Number(route.query.page) || 1)
+  const hydratedFilters = hydrateExplorerFiltersFromRoute(route.query)
+  searchQuery.value = hydratedFilters.searchQuery
+  appliedSearchQuery.value = hydratedFilters.appliedSearchQuery
+  sortMode.value = hydratedFilters.sortMode
+  genreFilter.value = hydratedFilters.genreFilter
+  countryFilter.value = hydratedFilters.countryFilter
+  decadeFilter.value = hydratedFilters.decadeFilter
+  yearFilter.value = hydratedFilters.yearFilter
+  currentPage.value = hydratedFilters.currentPage
 }
 
 async function loadGenres() {
@@ -407,8 +411,8 @@ watch(currentPage, async () => {
 
 onMounted(async () => {
   hydrateFiltersFromRoute()
-  syncFullscreenState()
-  document.addEventListener('fullscreenchange', syncFullscreenState)
+  syncFiltersViewportMode()
+  window.addEventListener('resize', syncFiltersViewportMode)
 
   try {
     await Promise.all([loadGenres(), loadCountries()])
@@ -421,7 +425,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (searchDebounceTimer) window.clearTimeout(searchDebounceTimer)
-  document.removeEventListener('fullscreenchange', syncFullscreenState)
+  window.removeEventListener('resize', syncFiltersViewportMode)
 })
 </script>
 
@@ -445,6 +449,20 @@ onUnmounted(() => {
   grid-template-columns: 120px 1fr 120px;
   gap: 1rem;
   align-items: center;
+}
+
+@media (max-width: 1024px) {
+  .explorer-topbar {
+    grid-template-columns: 120px 1fr;
+  }
+
+  .topbar-action-btn {
+    display: none;
+  }
+}
+
+.explorer-controls-toggle {
+  margin-top: 1rem;
 }
 
 .back-btn {
@@ -667,6 +685,11 @@ onUnmounted(() => {
   box-shadow: 0 14px 26px -18px rgba(0, 0, 0, 0.45);
 }
 
+.explorer-tile:focus-visible {
+  outline: 3px solid #111111;
+  outline-offset: 2px;
+}
+
 .tile-poster-wrap {
   position: relative;
   aspect-ratio: 2 / 3;
@@ -804,7 +827,11 @@ onUnmounted(() => {
   }
 
   .explorer-controls {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .control-field span {
+    font-size: 0.78rem;
   }
 
   .explorer-floating-collection-btn {
@@ -817,6 +844,12 @@ onUnmounted(() => {
   .results-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 620px) {
+  .explorer-controls {
+    grid-template-columns: 1fr;
   }
 }
 </style>

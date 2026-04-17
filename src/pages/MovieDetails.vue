@@ -58,6 +58,7 @@
               :class="{ active: isCurrentMovieSeen }"
               @click="handleSeenMovie"
               title="Marquer comme vu"
+              aria-label="Marquer ce film comme vu"
             >
               📽️ J'AI VU CE FILM !
             </button>
@@ -66,6 +67,7 @@
               :class="{ active: isCurrentMovieWatchlist }"
               @click="handleWatchlistMovie"
               title="Ajouter aux films à voir"
+              aria-label="Ajouter ce film a la liste a voir"
             >
               🍿 À VOIR !
             </button>
@@ -73,6 +75,7 @@
               class="details-action-btn collection-btn"
               @click="goToCollection"
               title="Voir ma collection"
+              aria-label="Voir ma collection"
             >
               🎟️ MA COLLECTION
             </button>
@@ -119,8 +122,9 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useFullscreen } from '../composables/useFullscreen'
 import { fetchMovieDetailsById } from '../services/api/tmdb.service'
 import {
   isMovieInSeenCollection,
@@ -137,7 +141,7 @@ const movieData = ref(null)
 const isLoading = ref(true)
 const isCurrentMovieSeen = ref(false)
 const isCurrentMovieWatchlist = ref(false)
-const isFullscreen = ref(Boolean(document.fullscreenElement))
+const { isFullscreen, toggleFullscreen } = useFullscreen()
 
 const canMarkAsSeen = computed(() => {
   if (!movieData.value?.releaseDate) return true
@@ -145,23 +149,6 @@ const canMarkAsSeen = computed(() => {
   const todayIso = new Date().toISOString().slice(0, 10)
   return String(movieData.value.releaseDate).slice(0, 10) <= todayIso
 })
-
-function syncFullscreenState() {
-  isFullscreen.value = Boolean(document.fullscreenElement)
-}
-
-async function toggleFullscreen() {
-  try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen()
-      return
-    }
-
-    await document.documentElement.requestFullscreen()
-  } catch (error) {
-    console.error('Impossible de changer le mode plein écran:', error)
-  }
-}
 
 function getCurrentMovieId() {
   return Number(route.params.id)
@@ -292,12 +279,7 @@ async function loadMovieDetails() {
 }
 
 onMounted(() => {
-  document.addEventListener('fullscreenchange', syncFullscreenState)
   loadMovieDetails()
-})
-
-onUnmounted(() => {
-  document.removeEventListener('fullscreenchange', syncFullscreenState)
 })
 </script>
 
@@ -320,6 +302,16 @@ onUnmounted(() => {
   max-width: 1200px;
   margin-left: auto;
   margin-right: auto;
+}
+
+@media (max-width: 1024px) {
+  .movie-details-header {
+    grid-template-columns: 120px 1fr;
+  }
+
+  .topbar-action-btn {
+    display: none;
+  }
 }
 
 .back-btn {
@@ -609,8 +601,29 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
+  .movie-details-container {
+    padding: 1.15rem 0.85rem 1rem;
+  }
+
+  .movie-details-header {
+    grid-template-columns: 1fr;
+    margin-bottom: 1.2rem;
+    gap: 0.55rem;
+  }
+
+  .movie-details-header h1 {
+    text-align: left;
+    transform: none;
+  }
+
+  .topbar-action-btn,
+  .back-btn {
+    width: 100%;
+  }
+
   .movie-details-content {
     grid-template-columns: 1fr;
+    gap: 1.2rem;
   }
 
   .movie-poster {
@@ -626,8 +639,20 @@ onUnmounted(() => {
     gap: 0.5rem;
   }
 
+  .meta-stats {
+    grid-template-columns: 1fr;
+  }
+
   .meta-actions {
     min-width: 0;
+  }
+
+  .details-action-btn {
+    width: 100%;
+  }
+
+  .budget-section {
+    grid-template-columns: 1fr;
   }
 }
 </style>

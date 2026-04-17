@@ -3,23 +3,32 @@
     <div class="header-content">
       <div class="brand">
         <h1 class="logo">
-          <button class="logo-link" @click="handleBrandClick">Cinélogique</button>
+          <button class="logo-link" type="button" @click="handleBrandClick" aria-label="Retourner a l'accueil">
+            Cinélogique
+          </button>
         </h1>
         <p class="tagline">Un film. Des indices. À toi de trouver.</p>
       </div>
 
-      <nav class="actions">
-        <button class="btn-theme" @click="toggleTheme" :title="isDark ? 'Mode clair' : 'Mode sombre'">
+      <nav class="actions" aria-label="Actions principales">
+        <button
+          class="btn-theme"
+          type="button"
+          @click="toggleTheme"
+          :title="isDark ? 'Mode clair' : 'Mode sombre'"
+          :aria-label="isDark ? 'Activer le mode clair' : 'Activer le mode sombre'"
+          :aria-pressed="isDark"
+        >
           <span v-if="isDark">☀️</span>
           <span v-else>🌙</span>
         </button>
 
-        <button class="btn btn-secondary btn-explorer" @click="goToExplorer" :class="{ active: isExplorerPage }">
+        <button class="btn btn-secondary btn-explorer" type="button" @click="goToExplorer" :class="{ active: isExplorerPage }">
           Explorer
         </button>
 
-        <button class="btn btn-secondary" @click="openRules">Règles</button>
-        <button class="btn btn-primary" @click="reloadPage">Nouvelle partie</button>
+        <button class="btn btn-secondary" type="button" @click="openRules">Règles</button>
+        <button class="btn btn-primary" type="button" @click="reloadPage">Nouvelle partie</button>
       </nav>
     </div>
   </header>
@@ -205,5 +214,60 @@ function handleBrandClick() {
 .btn-primary:hover {
   background: #059669;
   transform: translateY(-2px);
+}
+
+@media (max-width: 980px) {
+  .app-header {
+    padding: 1.2rem 1rem;
+  }
+
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.9rem;
+  }
+
+  .actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .logo-link {
+    font-size: 1.95rem;
+  }
+
+  .tagline {
+    font-size: 0.85rem;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .btn-theme,
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .btn {
+    padding: 0.56rem 0.9rem;
+    font-size: 0.82rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .actions {
+    gap: 0.5rem;
+  }
+
+  .btn {
+    font-size: 0.78rem;
+    padding: 0.5rem 0.7rem;
+  }
 }
 </style>

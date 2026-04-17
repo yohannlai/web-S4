@@ -37,4 +37,17 @@
   font-style: italic;
   margin: 0;
 }
+
+@media (max-width: 760px) {
+  .app-footer {
+    padding: 1.25rem 1rem;
+  }
+
+  .footer-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.45rem;
+    font-size: 0.8rem;
+  }
+}
 </style>

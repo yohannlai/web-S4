@@ -24,13 +24,13 @@
       <div ref="tabsSentinelRef" class="tabs-sentinel" aria-hidden="true"></div>
       <div ref="tabsWrapRef" class="collection-tabs-wrap">
         <div class="collection-tabs" role="tablist" aria-label="Onglets de collection">
-          <button class="tab-btn" :class="{ active: activeTab === 'found' }" @click="switchTab('found')" role="tab">
+          <button class="tab-btn" :class="{ active: activeTab === 'found' }" @click="switchTab('found')" role="tab" :aria-selected="activeTab === 'found'">
             Films trouvés
           </button>
-          <button class="tab-btn" :class="{ active: activeTab === 'seen' }" @click="switchTab('seen')" role="tab">
+          <button class="tab-btn" :class="{ active: activeTab === 'seen' }" @click="switchTab('seen')" role="tab" :aria-selected="activeTab === 'seen'">
             Films vus
           </button>
-          <button class="tab-btn" :class="{ active: activeTab === 'watchlist' }" @click="switchTab('watchlist')" role="tab">
+          <button class="tab-btn" :class="{ active: activeTab === 'watchlist' }" @click="switchTab('watchlist')" role="tab" :aria-selected="activeTab === 'watchlist'">
             Films à voir
           </button>
         </div>
@@ -63,6 +63,11 @@
             class="poster-tile"
             :class="{ removable: true }"
             @click="openMovieDetails(movie)"
+            @keydown.enter.prevent="openMovieDetails(movie)"
+            @keydown.space.prevent="openMovieDetails(movie)"
+            role="button"
+            tabindex="0"
+            :aria-label="`Ouvrir les details de ${movie.title}`"
           >
             <div class="tile-poster-wrap">
               <img v-if="movie.posterUrl" :src="movie.posterUrl" :alt="movie.title" class="tile-poster" />
@@ -73,6 +78,7 @@
               <button
                 class="remove-btn"
                 title="Retirer de la collection"
+                aria-label="Retirer de la collection"
                 @click.stop="removeMovie(movie)"
               >
                 −
@@ -93,6 +99,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useFullscreen } from '../composables/useFullscreen'
 import {
   getMovieCollection,
   removeFoundMovie,
@@ -103,7 +110,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const collection = ref(getMovieCollection())
-const isFullscreen = ref(Boolean(document.fullscreenElement))
+const { isFullscreen, toggleFullscreen } = useFullscreen()
 const tabsWrapRef = ref(null)
 const tabsSentinelRef = ref(null)
 const showScrollTopButton = ref(false)
@@ -164,23 +171,6 @@ function goBack() {
   router.push({ name: 'game' })
 }
 
-function syncFullscreenState() {
-  isFullscreen.value = Boolean(document.fullscreenElement)
-}
-
-async function toggleFullscreen() {
-  try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen()
-      return
-    }
-
-    await document.documentElement.requestFullscreen()
-  } catch (error) {
-    console.error('Impossible de changer le mode plein écran:', error)
-  }
-}
-
 function openMovieDetails(movie) {
   if (!movie?.movieId) return
 
@@ -207,13 +197,11 @@ function removeMovie(movie) {
 
 onMounted(() => {
   reloadCollection()
-  document.addEventListener('fullscreenchange', syncFullscreenState)
   window.addEventListener('cine:collection-updated', reloadCollection)
   setupScrollTopObserver()
 })
 
 onUnmounted(() => {
-  document.removeEventListener('fullscreenchange', syncFullscreenState)
   tabsObserver?.disconnect()
   tabsObserver = null
   window.removeEventListener('cine:collection-updated', reloadCollection)
@@ -240,6 +228,16 @@ onUnmounted(() => {
   grid-template-columns: 120px 1fr 120px;
   gap: 1rem;
   align-items: center;
+}
+
+@media (max-width: 1024px) {
+  .collection-topbar {
+    grid-template-columns: 120px 1fr;
+  }
+
+  .topbar-action-btn {
+    display: none;
+  }
 }
 
 .back-btn {
@@ -370,11 +368,21 @@ onUnmounted(() => {
   box-shadow: 0 12px 18px -4px rgba(0, 0, 0, 0.14);
 }
 
+.poster-tile:focus-visible {
+  outline: 3px solid #b88900;
+  outline-offset: 2px;
+}
+
 .tile-poster-wrap {
   position: relative;
 }
 
 .poster-tile.removable:hover .remove-btn {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.poster-tile.removable:focus-within .remove-btn {
   opacity: 1;
   transform: translateY(0);
 }

@@ -12,15 +12,17 @@
               class="toolbar-btn action-btn seen-btn"
               :class="{ active: isCurrentMovieSeen }"
               @click="handleSeenMovie"
+              type="button"
               title="Marquer comme vu"
+              aria-label="Marquer ce film comme vu"
             >
               📽️ J'AI VU CE FILM !
             </button>
-            <button class="toolbar-btn action-btn discover-btn" @click="goToMovieDetails" title="Voir les détails">
+            <button class="toolbar-btn action-btn discover-btn" @click="goToMovieDetails" type="button" title="Voir les détails" aria-label="Voir les details du film">
               🎬 DÉCOUVRIR CE FILM
             </button>
           </div>
-          <button v-else-if="!roundCompleted" class="toolbar-btn pass-btn" @click="skipMovie">
+          <button v-else-if="!roundCompleted" class="toolbar-btn pass-btn" @click="skipMovie" type="button" aria-label="Passer ce film">
             Passer
           </button>
           <div v-else class="toolbar-spacer"></div>
@@ -31,6 +33,7 @@
             <button
               class="toolbar-btn score-btn"
               @click="toggleHistory"
+              type="button"
               title="Voir l'historique de la partie"
               aria-label="Voir l'historique de la partie"
             >
@@ -41,7 +44,9 @@
             <button
               class="toolbar-btn fullscreen-btn"
               @click="toggleFullscreen"
+              type="button"
               :title="isFullscreen ? 'Quitter le plein écran' : 'Activer le plein écran'"
+              :aria-label="isFullscreen ? 'Quitter le plein ecran' : 'Activer le plein ecran'"
             >
               {{ isFullscreen ? '✕' : '⛶' }}
             </button>
@@ -50,7 +55,7 @@
         </div>
 
         <div class="toolbar-right">
-          <button v-if="roundCompleted" class="toolbar-btn next-btn" @click="fetchRandomMovie">
+          <button v-if="roundCompleted" class="toolbar-btn next-btn" @click="fetchRandomMovie" type="button" aria-label="Film suivant">
             Suivant
           </button>
           <div v-else class="toolbar-spacer"></div>
@@ -78,7 +83,13 @@
           <div
             class="genres-card card"
             :class="{ 'clickable': !revealedCards.genres, 'reveal-burst': isRevealAnimating && animateCards.genres }"
-            @click="revealedCards.genres = true"
+            @click="revealCard('genres')"
+            @keydown.enter.prevent="revealCard('genres')"
+            @keydown.space.prevent="revealCard('genres')"
+            role="button"
+            tabindex="0"
+            :aria-label="revealedCards.genres ? 'Indice genre revele' : 'Reveler l indice genre'"
+            :aria-disabled="revealedCards.genres"
           >
             <div v-if="revealedCards.genres" class="revealed-content">
               <p>{{ genres.join(", ") }}</p>
@@ -91,7 +102,13 @@
           <div
             class="card year-card"
             :class="[revealedCards.year ? decadeClass : '', { 'clickable': !revealedCards.year, 'reveal-burst': isRevealAnimating && animateCards.year }]"
-            @click="revealedCards.year = true"
+            @click="revealCard('year')"
+            @keydown.enter.prevent="revealCard('year')"
+            @keydown.space.prevent="revealCard('year')"
+            role="button"
+            tabindex="0"
+            :aria-label="revealedCards.year ? 'Indice annee revele' : 'Reveler l indice annee'"
+            :aria-disabled="revealedCards.year"
           >
             <div v-if="revealedCards.year" class="revealed-content">
               <p class="revealed-year" :class="{ 'no-pop': lockYearPopAnimation }">{{ year }}</p>
@@ -106,7 +123,13 @@
           <div
             class="director-card card"
             :class="{ 'clickable': !revealedCards.director, 'reveal-burst': isRevealAnimating && animateCards.director }"
-            @click="revealedCards.director = true"
+            @click="revealCard('director')"
+            @keydown.enter.prevent="revealCard('director')"
+            @keydown.space.prevent="revealCard('director')"
+            role="button"
+            tabindex="0"
+            :aria-label="revealedCards.director ? 'Indice realisateur revele' : 'Reveler l indice realisateur'"
+            :aria-disabled="revealedCards.director"
           >
              <div v-if="revealedCards.director" class="revealed-content">
               <p>{{ director }}</p>
@@ -119,7 +142,13 @@
           <div
             class="actors-card card"
             :class="{ 'clickable': !revealedCards.actors, 'reveal-burst': isRevealAnimating && animateCards.actors }"
-            @click="revealedCards.actors = true"
+            @click="revealCard('actors')"
+            @keydown.enter.prevent="revealCard('actors')"
+            @keydown.space.prevent="revealCard('actors')"
+            role="button"
+            tabindex="0"
+            :aria-label="revealedCards.actors ? 'Indice acteurs revele' : 'Reveler l indice acteurs'"
+            :aria-disabled="revealedCards.actors"
           >
              <div v-if="revealedCards.actors" class="revealed-content">
               <p>{{ actors.join(", ") }}</p>
@@ -158,26 +187,34 @@
             placeholder="Devinez le titre du film..."
             class="search-input"
             :disabled="roundCompleted || isRulesOpen"
+            aria-label="Saisir le titre du film"
+            aria-autocomplete="list"
+            :aria-expanded="suggestions.length > 0"
+            :aria-controls="suggestionListId"
+            :aria-activedescendant="highlightedSuggestionIndex >= 0 ? getSuggestionOptionId(highlightedSuggestionIndex) : undefined"
           />
 
           <!-- SUGGESTIONS -->
-          <div v-if="suggestions.length > 0" class="suggestions-dropdown">
+          <div v-if="suggestions.length > 0" :id="suggestionListId" class="suggestions-dropdown" role="listbox" aria-label="Suggestions de titres">
             <div
               v-for="(suggestion, index) in suggestions"
               :key="suggestion.id"
               @click="selectSuggestion(suggestion)"
               class="suggestion-item"
               :class="{ 'active': highlightedSuggestionIndex === index }"
+              :id="getSuggestionOptionId(index)"
+              role="option"
+              :aria-selected="highlightedSuggestionIndex === index"
             >
               <span class="suggestion-title">{{ suggestion.title }}</span>
               <span v-if="suggestion.showOriginal" class="suggestion-original">({{ suggestion.originalTitle }})</span>
             </div>
           </div>
         </div>
-        <button @click="validateGuess" class="validate-btn" :disabled="!searchInput.trim() || roundCompleted || isRulesOpen">
+        <button @click="validateGuess" class="validate-btn" type="button" :disabled="!searchInput.trim() || roundCompleted || isRulesOpen" aria-label="Valider la proposition">
           ✓
         </button>
-        <button @click="goToCollection" class="collection-nav-btn" title="Voir ma collection" :disabled="isRulesOpen">
+        <button @click="goToCollection" class="collection-nav-btn" type="button" title="Voir ma collection" aria-label="Voir ma collection" :disabled="isRulesOpen">
           🎟️ MA COLLECTION
         </button>
       </div>
@@ -185,10 +222,10 @@
   </section>
 
   <div v-if="isHistoryOpen" class="history-overlay" @click.self="isHistoryOpen = false">
-    <div class="history-modal">
+    <div class="history-modal" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
       <div class="history-header">
-        <h3>Historique de la partie</h3>
-        <button class="history-close" @click="isHistoryOpen = false">Fermer</button>
+        <h3 id="history-modal-title">Historique de la partie</h3>
+        <button class="history-close" type="button" @click="isHistoryOpen = false">Fermer</button>
       </div>
 
       <div class="history-summary">
@@ -217,9 +254,9 @@
   </div>
 
   <div v-if="isModePickerOpen" class="rules-overlay" @click.self="chooseGameMode()">
-    <div class="rules-modal mode-modal">
+    <div class="rules-modal mode-modal" role="dialog" aria-modal="true" aria-labelledby="mode-picker-title">
       <div class="rules-header">
-        <h2>Choisis ton mode</h2>
+        <h2 id="mode-picker-title">Choisis ton mode</h2>
       </div>
 
       <p class="rules-intro">
@@ -227,19 +264,19 @@
       </p>
 
       <div class="mode-actions">
-        <button class="mode-btn mode-classic" @click="chooseGameMode(gameRoundModes.CLASSIC)">Mode Classique</button>
-        <button class="mode-btn mode-now-playing" @click="chooseGameMode(gameRoundModes.NOW_PLAYING)">Mode A l'affiche</button>
-        <button class="mode-btn mode-upcoming" @click="chooseGameMode(gameRoundModes.UPCOMING)">Mode Avant-premiere</button>
-        <button class="mode-btn mode-explorer" @click="chooseExplorerMode">Mode Explorer</button>
+        <button class="mode-btn mode-classic" type="button" @click="chooseGameMode(gameRoundModes.CLASSIC)">Mode Classique</button>
+        <button class="mode-btn mode-now-playing" type="button" @click="chooseGameMode(gameRoundModes.NOW_PLAYING)">Mode A l'affiche</button>
+        <button class="mode-btn mode-upcoming" type="button" @click="chooseGameMode(gameRoundModes.UPCOMING)">Mode Avant-premiere</button>
+        <button class="mode-btn mode-explorer" type="button" @click="chooseExplorerMode">Mode Explorer</button>
       </div>
     </div>
   </div>
 
   <div v-if="isRulesOpen" class="rules-overlay" @click.self="closeRulesModal">
-    <div class="rules-modal">
+    <div class="rules-modal" role="dialog" aria-modal="true" aria-labelledby="rules-modal-title">
       <div class="rules-header">
-        <h2>Règles du jeu</h2>
-        <button class="rules-close" @click="closeRulesModal">{{ hasSeenRulesOnce ? "Reprendre" : "Commencer" }}</button>
+        <h2 id="rules-modal-title">Règles du jeu</h2>
+        <button class="rules-close" type="button" @click="closeRulesModal">{{ hasSeenRulesOnce ? "Reprendre" : "Commencer" }}</button>
       </div>
 
       <p class="rules-intro">
@@ -300,6 +337,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, reactive, computed } from "vue"
 import { useRoute, useRouter } from "vue-router"
+import { useFullscreen } from '../composables/useFullscreen'
 import { fetchMovieSuggestions, fetchRandomRoundMovie, gameRoundModes } from "../services/api/tmdb.service"
 import {
   competitiveConfig,
@@ -367,12 +405,13 @@ const isModePickerOpen = ref(false)
 const hasSeenRulesOnce = ref(false)
 const hasBootstrappedRound = ref(false)
 const isCurrentMovieSeen = ref(false)
-const isFullscreen = ref(Boolean(document.fullscreenElement))
+const { isFullscreen, toggleFullscreen } = useFullscreen()
 const lockYearPopAnimation = ref(false)
 const isTimerPaused = ref(false)
 const pausedAtTimestamp = ref(null)
 const pausedDurationMs = ref(0)
 const selectedGameMode = ref(gameRoundModes.CLASSIC)
+const suggestionListId = 'game-suggestions-list'
 let timerInterval = null
 
 const animateCards = reactive({
@@ -436,6 +475,15 @@ function restoreSelectedGameMode() {
 
 function setDecadeFont(year) {
   decadeClass.value = resolveDecadeClass(year)
+}
+
+function revealCard(cardKey) {
+  if (revealedCards[cardKey]) return
+  revealedCards[cardKey] = true
+}
+
+function getSuggestionOptionId(index) {
+  return `game-suggestion-${index}`
 }
 
 function revealAllCards() {
@@ -691,23 +739,6 @@ function handlePageHide() {
   localStorage.setItem(competitiveConfig.resetOnReloadKey, "1")
 }
 
-function updateFullscreenState() {
-  isFullscreen.value = Boolean(document.fullscreenElement)
-}
-
-async function toggleFullscreen() {
-  try {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen()
-      return
-    }
-
-    await document.documentElement.requestFullscreen()
-  } catch (error) {
-    console.error("Impossible de changer le mode plein écran:", error)
-  }
-}
-
 async function updateSuggestions() {
   highlightedSuggestionIndex.value = -1
 
@@ -960,7 +991,6 @@ onMounted(async () => {
   timerInterval = window.setInterval(() => {
     nowTimestamp.value = Date.now()
   }, 1000)
-  document.addEventListener("fullscreenchange", updateFullscreenState)
   window.addEventListener("cine:new-game", handleNewGameRequested)
   window.addEventListener("cine:open-rules", handleRulesRequested)
   window.addEventListener("beforeunload", handleBeforeUnload)
@@ -971,7 +1001,6 @@ onUnmounted(() => {
   if (timerInterval) {
     clearInterval(timerInterval)
   }
-  document.removeEventListener("fullscreenchange", updateFullscreenState)
   window.removeEventListener("cine:new-game", handleNewGameRequested)
   window.removeEventListener("cine:open-rules", handleRulesRequested)
   window.removeEventListener("beforeunload", handleBeforeUnload)
@@ -989,7 +1018,7 @@ onUnmounted(() => {
 /* --- GLOBAL LAYOUT --- */
 .game-area {
   min-height: calc(100vh - 100px);
-  padding: 2rem;
+  padding: clamp(0.9rem, 2.6vw, 2rem);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1002,6 +1031,7 @@ onUnmounted(() => {
 .game-shell {
   width: 100%;
   max-width: 1100px;
+  --board-height: 525px;
 }
 
 .game-toolbar {
@@ -1123,11 +1153,12 @@ onUnmounted(() => {
 
 .movie-grid {
   display: grid;
-  grid-template-columns: 350px 1fr;
-  gap: 1.5rem;
+  grid-template-columns: minmax(250px, 350px) minmax(0, 1fr);
+  gap: clamp(0.85rem, 2vw, 1.5rem);
   width: 100%;
   max-width: 1100px;
   margin: 0 auto;
+  align-items: stretch;
 }
 
 /* --- GENERIC CARD --- */
@@ -1164,6 +1195,11 @@ onUnmounted(() => {
   transform: translateY(-4px);
   box-shadow: var(--shadow-hover);
   border-color: #cbd5e1;
+}
+
+.clickable:focus-visible {
+  outline: 3px solid #4338ca;
+  outline-offset: 2px;
 }
 
 /* --- HIDDEN CONTENT --- */
@@ -1268,7 +1304,7 @@ onUnmounted(() => {
 
 /* --- POSTER --- */
 .poster-card {
-  height: 525px;
+  height: var(--board-height);
   padding: 0.5rem;
 }
 
@@ -1339,14 +1375,14 @@ onUnmounted(() => {
 .right-grid {
   display: grid;
   grid-template-rows: 1fr 1fr 0.8fr;
-  gap: 1.5rem;
-  height: 525px;
+  gap: clamp(0.75rem, 1.8vw, 1.5rem);
+  height: var(--board-height);
 }
 
 .top-right, .bottom-right {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
+  gap: clamp(0.75rem, 1.8vw, 1.5rem);
 }
 
 /* --- ANIMATIONS --- */
@@ -1394,6 +1430,7 @@ onUnmounted(() => {
   gap: 1rem;
   position: relative;
   width: 100%;
+  align-items: stretch;
 }
 
 .search-input-wrap {
@@ -1850,9 +1887,89 @@ onUnmounted(() => {
   font-style: italic;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1200px) {
+  .game-shell {
+    --board-height: 500px;
+  }
+
+  .revealed-year {
+    font-size: 5rem;
+  }
+}
+
+@media (max-width: 1024px) {
+  .game-shell {
+    --board-height: 460px;
+  }
+
+  .movie-grid {
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  }
+
+  .genres-card .revealed-content p,
+  .director-card .revealed-content p,
+  .actors-card .revealed-content p {
+    font-size: 1.02rem;
+  }
+
+  .revealed-title {
+    font-size: 1.85rem;
+  }
+
+  .revealed-year {
+    font-size: 4.2rem;
+  }
+
+  .action-btn {
+    font-size: 0.62rem;
+    padding: 0.26rem 0.56rem;
+  }
+
+  .fullscreen-btn {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
   .game-toolbar {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .toolbar-left,
+  .toolbar-right {
+    justify-content: center;
     flex-wrap: wrap;
+  }
+
+  .score-zone {
+    order: -1;
+  }
+
+  .movie-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .poster-wrapper,
+  .right-grid {
+    width: 100%;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  .search-section {
+    margin-top: 1.2rem;
+  }
+}
+
+@media (max-width: 760px) {
+  .game-area {
+    min-height: auto;
+    justify-content: flex-start;
+  }
+
+  .game-toolbar {
     grid-template-columns: 1fr;
     justify-items: center;
   }
@@ -1874,14 +1991,78 @@ onUnmounted(() => {
     justify-content: center;
   }
 
+  .score-btn {
+    padding: 0.48rem 0.82rem;
+    gap: 0.35rem;
+  }
+
+  .score-label {
+    font-size: 0.68rem;
+  }
+
+  .score-value {
+    font-size: 1.06rem;
+  }
+
+  .score-hint {
+    font-size: 0.64rem;
+    padding-left: 0.32rem;
+  }
+
+  .time-bonus {
+    font-size: 0.72rem;
+  }
+
+  .game-shell {
+    --board-height: auto;
+  }
+
+  .poster-card {
+    height: min(78vw, 500px);
+  }
+
+  .right-grid {
+    grid-template-rows: auto;
+    height: auto;
+  }
+
   .search-container {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 0.65rem;
+  }
+
+  .search-input-wrap {
+    grid-column: 1 / -1;
+  }
+
+  .search-input {
+    font-size: 0.96rem;
+    min-height: 44px;
   }
 
   .validate-btn,
   .collection-nav-btn {
-    flex: 1;
-    min-width: 120px;
+    min-width: 0;
+    padding: 0.72rem 0.85rem;
+  }
+
+  .validate-btn {
+    width: 52px;
+    padding: 0.72rem 0;
+    font-size: 1rem;
+  }
+
+  .collection-nav-btn {
+    white-space: nowrap;
+    font-size: 0.8rem;
+    padding-inline: 0.72rem;
+  }
+
+  .suggestions-dropdown {
+    top: calc(100% + 0.45rem);
+    bottom: auto;
+    max-height: 42vh;
   }
 
   .history-summary {
@@ -1897,6 +2078,88 @@ onUnmounted(() => {
   .rules-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .history-topline {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 560px) {
+  .game-area {
+    padding: 0.78rem;
+  }
+
+  .poster-card {
+    height: min(84vw, 420px);
+  }
+
+  .top-right,
+  .bottom-right {
+    grid-template-columns: 1fr;
+  }
+
+  .hidden-label {
+    font-size: 0.92rem;
+    letter-spacing: 0.09em;
+  }
+
+  .revealed-title {
+    font-size: 1.52rem;
+    line-height: 1.18;
+  }
+
+  .original-title {
+    font-size: 0.9rem;
+  }
+
+  .revealed-year {
+    font-size: clamp(2.4rem, 12vw, 3.5rem);
+  }
+
+  .genres-card .revealed-content p,
+  .director-card .revealed-content p,
+  .actors-card .revealed-content p {
+    font-size: 0.96rem;
+    line-height: 1.35;
+  }
+
+  .score-controls {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .rules-modal,
+  .history-modal {
+    padding: 0.85rem;
+  }
+
+  .rules-header h2 {
+    font-size: 1.35rem;
+  }
+
+  .rules-card ul {
+    font-size: 0.92rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .action-btn {
+    width: 100%;
+    font-size: 0.6rem;
+  }
+
+  .search-container {
+    gap: 0.65rem;
+  }
+
+  .search-container {
+    grid-template-columns: minmax(0, 1fr) 48px;
+  }
+
+  .collection-nav-btn {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 }
 </style>

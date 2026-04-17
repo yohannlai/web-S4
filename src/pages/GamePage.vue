@@ -7,24 +7,12 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
 import AppHeader from "../components/AppHeader.vue"
 import AppFooter from "../components/AppFooter.vue"
 import GameArea from "../components/GameArea.vue"
+import { useFullscreen } from '../composables/useFullscreen'
 
-const isGameFullscreen = ref(Boolean(document.fullscreenElement))
-
-function syncFullscreenState() {
-  isGameFullscreen.value = Boolean(document.fullscreenElement)
-}
-
-onMounted(() => {
-  document.addEventListener('fullscreenchange', syncFullscreenState)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('fullscreenchange', syncFullscreenState)
-})
+const { isFullscreen: isGameFullscreen } = useFullscreen()
 </script>
 
 <style>

@@ -75,9 +75,22 @@ function isReleaseDateWithinExplorerWindow(releaseDate) {
 }
 
 async function fetchJson(path, params = {}) {
+  if (!API_KEY) {
+    throw new Error('Cle API TMDB manquante (VITE_TMDB_API_KEY)')
+  }
+
   const searchParams = new URLSearchParams({ api_key: API_KEY, ...params })
   const response = await fetch(`${TMDB_BASE_URL}${path}?${searchParams.toString()}`)
-  return response.json()
+  if (!response.ok) {
+    throw new Error(`Erreur TMDB ${response.status} sur ${path}`)
+  }
+
+  const payload = await response.json()
+  if (payload?.success === false) {
+    throw new Error(payload.status_message || `Erreur API TMDB sur ${path}`)
+  }
+
+  return payload
 }
 
 async function fetchGenreMap() {
@@ -127,6 +140,19 @@ async function fetchMovieDataAndCredits(movieId) {
   ])
 
   return { movieData, creditsData }
+}
+
+function filterExplorerEligibleEntries(entries, { countryCode = null } = {}) {
+  return entries
+    .filter(Boolean)
+    .filter(({ movieData, creditsData }) =>
+      isReleaseDateWithinExplorerWindow(movieData?.release_date) &&
+      isPlayableMovieForGame(movieData, creditsData, gameRoundModes.CLASSIC, { ignoreReleaseWindow: true })
+    )
+    .filter(({ movieData }) => {
+      if (!countryCode) return true
+      return (movieData.production_countries || []).some((country) => country.iso_3166_1 === countryCode)
+    })
 }
 
 export async function fetchMovieGenres() {
@@ -203,17 +229,7 @@ export async function fetchMovieExplorerPage({
       })
     )
 
-    const eligibleMovies = entries
-      .filter(Boolean)
-      .filter(({ movieData, creditsData }) =>
-        isReleaseDateWithinExplorerWindow(movieData?.release_date) &&
-        isPlayableMovieForGame(movieData, creditsData, gameRoundModes.CLASSIC, { ignoreReleaseWindow: true })
-      )
-      .filter(({ movieData }) => {
-        if (!countryCode) return true
-        return (movieData.production_countries || []).some((country) => country.iso_3166_1 === countryCode)
-      })
-      .map(({ movie }) => movie)
+    const eligibleMovies = filterExplorerEligibleEntries(entries, { countryCode }).map(({ movie }) => movie)
 
     return {
       movies: eligibleMovies.map((movie) => mapMovieSummary(movie, genreMap)),
@@ -253,13 +269,7 @@ export async function fetchMovieExplorerPage({
     })
   )
 
-  const eligibleMovies = entries
-    .filter(Boolean)
-    .filter(({ movieData, creditsData }) =>
-      isReleaseDateWithinExplorerWindow(movieData?.release_date) &&
-      isPlayableMovieForGame(movieData, creditsData, gameRoundModes.CLASSIC, { ignoreReleaseWindow: true })
-    )
-    .map(({ movie }) => movie)
+  const eligibleMovies = filterExplorerEligibleEntries(entries).map(({ movie }) => movie)
 
   return {
     movies: eligibleMovies.map((movie) => mapMovieSummary(movie, genreMap)),
