@@ -5,7 +5,14 @@
         ← Retour
       </button>
       <h1>Détails du film</h1>
-      <div class="header-spacer"></div>
+      <button
+        class="back-btn topbar-action-btn"
+        @click="toggleFullscreen"
+        :title="isFullscreen ? 'Quitter le plein écran' : 'Activer le plein écran'"
+        :aria-label="isFullscreen ? 'Quitter le plein écran' : 'Activer le plein écran'"
+      >
+        {{ isFullscreen ? '✕' : '⛶' }}
+      </button>
     </div>
 
     <div v-if="isLoading" class="loader">Chargement des détails...</div>
@@ -47,7 +54,7 @@
               @click="handleSeenMovie"
               title="Marquer comme vu"
             >
-              🍿 J'AI VU CE FILM !
+              📽️ J'AI VU CE FILM !
             </button>
             <button
               class="details-action-btn watch-btn"
@@ -55,14 +62,14 @@
               @click="handleWatchlistMovie"
               title="Ajouter aux films à voir"
             >
-              À VOIR !
+              🍿 À VOIR !
             </button>
             <button
               class="details-action-btn collection-btn"
               @click="goToCollection"
               title="Voir ma collection"
             >
-              MA COLLECTION
+              🎟️ MA COLLECTION
             </button>
           </div>
         </div>
@@ -107,7 +114,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { fetchMovieDetailsById } from '../services/api/tmdb.service'
 import {
@@ -125,6 +132,24 @@ const movieData = ref(null)
 const isLoading = ref(true)
 const isCurrentMovieSeen = ref(false)
 const isCurrentMovieWatchlist = ref(false)
+const isFullscreen = ref(Boolean(document.fullscreenElement))
+
+function syncFullscreenState() {
+  isFullscreen.value = Boolean(document.fullscreenElement)
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+      return
+    }
+
+    await document.documentElement.requestFullscreen()
+  } catch (error) {
+    console.error('Impossible de changer le mode plein écran:', error)
+  }
+}
 
 function getCurrentMovieId() {
   return Number(route.params.id)
@@ -237,14 +262,19 @@ async function loadMovieDetails() {
 }
 
 onMounted(() => {
+  document.addEventListener('fullscreenchange', syncFullscreenState)
   loadMovieDetails()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
 })
 </script>
 
 <style scoped>
 .movie-details-container {
   min-height: calc(100vh - 100px);
-  padding: 2rem;
+  padding: 2.75rem 2rem 2rem;
   background-color: var(--bg-page);
   transition: background-color 0.3s ease;
   color: var(--text-main);
@@ -252,9 +282,9 @@ onMounted(() => {
 }
 
 .movie-details-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 120px 1fr 120px;
   align-items: center;
-  justify-content: space-between;
   margin-bottom: 2rem;
   gap: 1rem;
   max-width: 1200px;
@@ -268,6 +298,9 @@ onMounted(() => {
   color: var(--text-main);
   padding: 0.5rem 1rem;
   border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: 'Outfit', sans-serif;
   font-weight: 700;
   cursor: pointer;
@@ -282,13 +315,15 @@ onMounted(() => {
 
 .movie-details-header h1 {
   margin: 0;
-  flex: 1;
   text-align: center;
   font-size: 1.5rem;
+  align-self: end;
+  transform: translateY(3px);
 }
 
-.header-spacer {
-  width: 70px;
+.topbar-action-btn {
+  width: 120px;
+  padding: 0.5rem;
 }
 
 .loader {
@@ -316,6 +351,7 @@ onMounted(() => {
 .movie-poster-section {
   display: flex;
   justify-content: center;
+  align-items: flex-start;
 }
 
 .movie-poster {
@@ -323,7 +359,7 @@ onMounted(() => {
   max-width: 350px;
   height: auto;
   border-radius: 12px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+  box-shadow: none;
   object-fit: contain;
   display: block;
 }
@@ -447,11 +483,11 @@ onMounted(() => {
 
 .collection-btn {
   border-radius: 12px;
-  color: #0d9488;
+  color: #b88900;
 }
 
 .collection-btn:hover {
-  background-color: rgba(13, 148, 136, 0.08);
+  background-color: rgba(184, 137, 0, 0.12);
 }
 
 .meta-item {

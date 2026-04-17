@@ -1,5 +1,5 @@
 <template>
-  <section class="game-area">
+  <section class="game-area" :class="{ 'restored-round': lockYearPopAnimation }">
     <div v-if="isLoading" class="loader">Recherche d’un film…</div>
     <div v-else-if="noMovies" class="loader">Aucun film disponible pour l’instant</div>
 
@@ -8,7 +8,7 @@
         <div class="toolbar-left">
           <div v-if="revealedCards.poster" class="poster-actions">
             <button class="toolbar-btn action-btn seen-btn" :class="{ active: isCurrentMovieSeen }" @click="handleSeenMovie" title="Marquer comme vu">
-              🍿 J'AI VU CE FILM !
+              📽️ J'AI VU CE FILM !
             </button>
             <button class="toolbar-btn action-btn discover-btn" @click="goToMovieDetails" title="Voir les détails">
               🎬 DÉCOUVRIR CE FILM
@@ -21,16 +21,25 @@
         </div>
 
         <div class="score-zone">
-          <button
-            class="toolbar-btn score-btn"
-            @click="toggleHistory"
-            title="Voir l'historique de la partie"
-            aria-label="Voir l'historique de la partie"
-          >
-            <span class="score-label">SCORE</span>
-            <span class="score-value">{{ totalScore }}</span>
-            <span class="score-hint">Historique</span>
-          </button>
+          <div class="score-controls">
+            <button
+              class="toolbar-btn score-btn"
+              @click="toggleHistory"
+              title="Voir l'historique de la partie"
+              aria-label="Voir l'historique de la partie"
+            >
+              <span class="score-label">SCORE</span>
+              <span class="score-value">{{ totalScore }}</span>
+              <span class="score-hint">Historique</span>
+            </button>
+            <button
+              class="toolbar-btn fullscreen-btn"
+              @click="toggleFullscreen"
+              :title="isFullscreen ? 'Quitter le plein écran' : 'Activer le plein écran'"
+            >
+              {{ isFullscreen ? '✕' : '⛶' }}
+            </button>
+          </div>
           <p v-if="!roundCompleted" class="time-bonus">Bonus temps: +{{ currentTimeBonus }}</p>
         </div>
 
@@ -79,7 +88,7 @@
             @click="revealedCards.year = true"
           >
             <div v-if="revealedCards.year" class="revealed-content">
-              <p class="revealed-year">{{ year }}</p>
+              <p class="revealed-year" :class="{ 'no-pop': lockYearPopAnimation }">{{ year }}</p>
             </div>
             <div v-else class="hidden-content">
               <p class="hidden-label">Année</p>
@@ -163,7 +172,7 @@
           ✓
         </button>
         <button @click="goToCollection" class="collection-nav-btn" title="Voir ma collection">
-          MA COLLECTION
+          🎟️ MA COLLECTION
         </button>
       </div>
     </div>
@@ -265,6 +274,8 @@ const streak = ref(0)
 const gameHistory = ref([])
 const isHistoryOpen = ref(false)
 const isCurrentMovieSeen = ref(false)
+const isFullscreen = ref(Boolean(document.fullscreenElement))
+const lockYearPopAnimation = ref(false)
 let timerInterval = null
 
 const animateCards = reactive({
@@ -399,6 +410,7 @@ function restoreCurrentRoundSnapshot() {
     roundStartedAt.value = Number(snapshot.roundStartedAt || Date.now())
     roundCompleted.value = Boolean(snapshot.roundCompleted)
     isCurrentMovieSeen.value = Boolean(snapshot.isCurrentMovieSeen)
+    lockYearPopAnimation.value = Boolean(snapshot.revealedCards?.year)
 
     suggestions.value = []
     searchFeedback.value = null
@@ -482,6 +494,23 @@ function handleBeforeUnload(event) {
 function handlePageHide() {
   if (!hasProgressToLose.value) return
   localStorage.setItem(competitiveConfig.resetOnReloadKey, "1")
+}
+
+function updateFullscreenState() {
+  isFullscreen.value = Boolean(document.fullscreenElement)
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+      return
+    }
+
+    await document.documentElement.requestFullscreen()
+  } catch (error) {
+    console.error("Impossible de changer le mode plein écran:", error)
+  }
 }
 
 async function updateSuggestions() {
@@ -623,6 +652,7 @@ async function fetchRandomMovie() {
   nowTimestamp.value = Date.now()
   currentMovieId.value = null
   isCurrentMovieSeen.value = false
+  lockYearPopAnimation.value = false
 
   let movieData = null
 
@@ -688,6 +718,7 @@ onMounted(() => {
   timerInterval = window.setInterval(() => {
     nowTimestamp.value = Date.now()
   }, 1000)
+  document.addEventListener("fullscreenchange", updateFullscreenState)
   window.addEventListener("cine:new-game", handleNewGameRequested)
   window.addEventListener("beforeunload", handleBeforeUnload)
   window.addEventListener("pagehide", handlePageHide)
@@ -697,6 +728,7 @@ onUnmounted(() => {
   if (timerInterval) {
     clearInterval(timerInterval)
   }
+  document.removeEventListener("fullscreenchange", updateFullscreenState)
   window.removeEventListener("cine:new-game", handleNewGameRequested)
   window.removeEventListener("beforeunload", handleBeforeUnload)
   window.removeEventListener("pagehide", handlePageHide)
@@ -784,6 +816,10 @@ onUnmounted(() => {
   color: #0f766e;
 }
 
+.fullscreen-btn {
+  color: #1d4ed8;
+}
+
 .score-btn {
   color: #1d4ed8;
   display: inline-flex;
@@ -826,6 +862,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.3rem;
   justify-self: center;
+}
+
+.score-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .time-bonus {
@@ -952,6 +994,10 @@ onUnmounted(() => {
   margin: 0;
   line-height: 1;
   animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.revealed-year.no-pop {
+  animation: none;
 }
 
 /* --- DECADES STYLES --- */
@@ -1158,9 +1204,9 @@ onUnmounted(() => {
 .collection-nav-btn {
   padding: 0.82rem 1.05rem;
   background-color: var(--bg-card);
-  border: 2px solid #0d9488;
+  border: 2px solid #b88900;
   border-radius: 12px;
-  color: #0d9488;
+  color: #b88900;
   font-family: 'Outfit', sans-serif;
   font-size: 0.9rem;
   font-weight: 700;
@@ -1172,7 +1218,7 @@ onUnmounted(() => {
 .collection-nav-btn:hover {
   transform: translateY(-3px);
   box-shadow: var(--shadow-hover);
-  background-color: rgba(13, 148, 136, 0.08);
+  background-color: rgba(184, 137, 0, 0.12);
 }
 
 .seen-btn.active {

@@ -11,18 +11,37 @@
           <p>Retrouve tous les films que tu as marqués pendant tes parties.</p>
         </header>
 
-        <div class="topbar-spacer"></div>
+        <button
+          class="back-btn topbar-action-btn"
+          @click="toggleFullscreen"
+          :title="isFullscreen ? 'Quitter le plein écran' : 'Activer le plein écran'"
+          :aria-label="isFullscreen ? 'Quitter le plein écran' : 'Activer le plein écran'"
+        >
+          {{ isFullscreen ? '✕' : '⛶' }}
+        </button>
       </div>
 
-      <div class="collection-tabs" role="tablist" aria-label="Onglets de collection">
-        <button class="tab-btn" :class="{ active: activeTab === 'found' }" @click="switchTab('found')" role="tab">
-          Films trouvés
-        </button>
-        <button class="tab-btn" :class="{ active: activeTab === 'seen' }" @click="switchTab('seen')" role="tab">
-          Films vus
-        </button>
-        <button class="tab-btn" :class="{ active: activeTab === 'watchlist' }" @click="switchTab('watchlist')" role="tab">
-          Films à voir
+      <div ref="tabsSentinelRef" class="tabs-sentinel" aria-hidden="true"></div>
+      <div ref="tabsWrapRef" class="collection-tabs-wrap">
+        <div class="collection-tabs" role="tablist" aria-label="Onglets de collection">
+          <button class="tab-btn" :class="{ active: activeTab === 'found' }" @click="switchTab('found')" role="tab">
+            Films trouvés
+          </button>
+          <button class="tab-btn" :class="{ active: activeTab === 'seen' }" @click="switchTab('seen')" role="tab">
+            Films vus
+          </button>
+          <button class="tab-btn" :class="{ active: activeTab === 'watchlist' }" @click="switchTab('watchlist')" role="tab">
+            Films à voir
+          </button>
+        </div>
+        <button
+          v-if="showScrollTopButton"
+          class="tab-btn scroll-top-btn"
+          @click="scrollToTop"
+          title="Remonter en haut"
+          aria-label="Remonter en haut"
+        >
+          ↑ Haut
         </button>
       </div>
 
@@ -33,7 +52,7 @@
               ? 'Aucun film trouvé pour le moment.'
               : activeTab === 'seen'
                 ? 'Aucun film vu pour le moment.'
-                : 'Aucun film dans "Films à voir" pour le moment.'
+                : 'Aucun film à voir pour le moment.'
           }}
         </p>
 
@@ -84,6 +103,11 @@ import {
 const route = useRoute()
 const router = useRouter()
 const collection = ref(getMovieCollection())
+const isFullscreen = ref(Boolean(document.fullscreenElement))
+const tabsWrapRef = ref(null)
+const tabsSentinelRef = ref(null)
+const showScrollTopButton = ref(false)
+let tabsObserver = null
 
 const validTabs = ['found', 'seen', 'watchlist']
 
@@ -106,6 +130,31 @@ function switchTab(tab) {
   router.replace({ name: 'collection', query: { tab } })
 }
 
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function setupScrollTopObserver() {
+  const sentinel = tabsSentinelRef.value
+  if (!sentinel) {
+    showScrollTopButton.value = false
+    return
+  }
+
+  tabsObserver = new IntersectionObserver(
+    ([entry]) => {
+      showScrollTopButton.value = !entry.isIntersecting
+    },
+    {
+      root: null,
+      threshold: 0,
+      rootMargin: '-6px 0px 0px 0px'
+    }
+  )
+
+  tabsObserver.observe(sentinel)
+}
+
 function goBack() {
   if (window.history.length > 1) {
     router.back()
@@ -113,6 +162,23 @@ function goBack() {
   }
 
   router.push({ name: 'game' })
+}
+
+function syncFullscreenState() {
+  isFullscreen.value = Boolean(document.fullscreenElement)
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+      return
+    }
+
+    await document.documentElement.requestFullscreen()
+  } catch (error) {
+    console.error('Impossible de changer le mode plein écran:', error)
+  }
 }
 
 function openMovieDetails(movie) {
@@ -141,18 +207,27 @@ function removeMovie(movie) {
 
 onMounted(() => {
   reloadCollection()
+  document.addEventListener('fullscreenchange', syncFullscreenState)
   window.addEventListener('cine:collection-updated', reloadCollection)
+  setupScrollTopObserver()
 })
 
 onUnmounted(() => {
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
+  tabsObserver?.disconnect()
+  tabsObserver = null
   window.removeEventListener('cine:collection-updated', reloadCollection)
 })
 </script>
 
 <style scoped>
+.tabs-sentinel {
+  height: 1px;
+}
+
 .collection-main {
   min-height: calc(100vh - 100px);
-  padding: 2rem;
+  padding: 2.75rem 2rem 2rem;
 }
 
 .collection-shell {
@@ -162,7 +237,7 @@ onUnmounted(() => {
 
 .collection-topbar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 120px 1fr 120px;
   gap: 1rem;
   align-items: center;
 }
@@ -173,6 +248,9 @@ onUnmounted(() => {
   color: var(--text-main);
   padding: 0.5rem 1rem;
   border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: 'Outfit', sans-serif;
   font-weight: 700;
   cursor: pointer;
@@ -185,8 +263,15 @@ onUnmounted(() => {
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
-.topbar-spacer {
-  width: 70px;
+.topbar-action-btn {
+  width: 120px;
+  padding: 0.5rem;
+}
+
+.collection-header {
+  align-self: end;
+  margin-left: 1.1rem;
+  transform: translateY(12px);
 }
 
 .collection-header h1 {
@@ -194,6 +279,7 @@ onUnmounted(() => {
   font-family: 'Playfair Display', serif;
   font-size: 2rem;
   font-style: italic;
+  color: #b88900;
 }
 
 .collection-header p {
@@ -202,11 +288,26 @@ onUnmounted(() => {
   font-family: 'Outfit', sans-serif;
 }
 
+.collection-tabs-wrap {
+  margin-top: 2.25rem;
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0.75rem;
+  z-index: 20;
+  background: color-mix(in srgb, var(--bg-page) 92%, transparent);
+  padding: 0.55rem 0.45rem;
+  border-radius: 14px;
+  backdrop-filter: blur(4px);
+}
+
 .collection-tabs {
-  margin-top: 1.5rem;
   display: flex;
   gap: 0.65rem;
   flex-wrap: wrap;
+  flex: 1;
 }
 
 .tab-btn {
@@ -228,8 +329,13 @@ onUnmounted(() => {
 }
 
 .tab-btn.active {
-  border-color: #1d4ed8;
-  color: #1d4ed8;
+  border-color: #b88900;
+  color: #b88900;
+}
+
+.scroll-top-btn {
+  border-color: #b88900;
+  color: #b88900;
 }
 
 .tab-panel {
@@ -342,8 +448,17 @@ onUnmounted(() => {
     text-align: center;
   }
 
+  .collection-header {
+    margin-left: 0;
+    transform: none;
+  }
+
   .topbar-spacer {
     display: none;
+  }
+
+  .collection-tabs-wrap {
+    top: 0.4rem;
   }
 }
 </style>
