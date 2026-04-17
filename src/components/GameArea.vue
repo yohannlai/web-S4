@@ -7,7 +7,7 @@
       <div class="game-toolbar">
         <div class="toolbar-left">
           <div v-if="revealedCards.poster" class="poster-actions">
-            <button class="toolbar-btn action-btn seen-btn" @click="handleSeenMovie" title="Marquer comme vu">
+            <button class="toolbar-btn action-btn seen-btn" :class="{ active: isCurrentMovieSeen }" @click="handleSeenMovie" title="Marquer comme vu">
               🍿 J'AI VU CE FILM !
             </button>
             <button class="toolbar-btn action-btn discover-btn" @click="goToMovieDetails" title="Voir les détails">
@@ -162,6 +162,9 @@
         <button @click="validateGuess" class="validate-btn" :disabled="!searchInput.trim() || roundCompleted">
           ✓
         </button>
+        <button @click="goToCollection" class="collection-nav-btn" title="Voir ma collection">
+          Collection
+        </button>
       </div>
     </div>
   </section>
@@ -214,6 +217,11 @@ import {
   restoreCompetitiveState,
   clearCompetitiveState
 } from "../services/game/competitive-game.service"
+import {
+  addFoundMovie,
+  isMovieInSeenCollection,
+  toggleSeenMovie
+} from "../services/game/collection.service"
 import { normalizeTitle, resolveDecadeClass } from "../utils/movie-game.utils"
 
 const router = useRouter()
@@ -256,6 +264,7 @@ const totalScore = ref(0)
 const streak = ref(0)
 const gameHistory = ref([])
 const isHistoryOpen = ref(false)
+const isCurrentMovieSeen = ref(false)
 let timerInterval = null
 
 const animateCards = reactive({
@@ -314,6 +323,27 @@ function createRoundEntryForHistory({ passed, points = 0, revealedHints = 0, ela
   })
 }
 
+function createCollectionPayload() {
+  if (!currentMovieId.value) return null
+
+  return {
+    movieId: currentMovieId.value,
+    title: title.value,
+    originalTitle: originalTitle.value,
+    posterUrl: posterUrl.value,
+    year: year.value
+  }
+}
+
+function syncCurrentMovieSeenState() {
+  if (!currentMovieId.value) {
+    isCurrentMovieSeen.value = false
+    return
+  }
+
+  isCurrentMovieSeen.value = isMovieInSeenCollection(currentMovieId.value)
+}
+
 function persistGameProgress() {
   persistCompetitiveState({
     totalScore: totalScore.value,
@@ -337,7 +367,8 @@ function persistCurrentRoundSnapshot() {
     searchInput: searchInput.value,
     wrongGuesses: wrongGuesses.value,
     roundStartedAt: roundStartedAt.value,
-    roundCompleted: roundCompleted.value
+    roundCompleted: roundCompleted.value,
+    isCurrentMovieSeen: isCurrentMovieSeen.value
   }
 
   sessionStorage.setItem(roundSnapshotStorageKey, JSON.stringify(snapshot))
@@ -367,6 +398,7 @@ function restoreCurrentRoundSnapshot() {
     wrongGuesses.value = Number(snapshot.wrongGuesses || 0)
     roundStartedAt.value = Number(snapshot.roundStartedAt || Date.now())
     roundCompleted.value = Boolean(snapshot.roundCompleted)
+    isCurrentMovieSeen.value = Boolean(snapshot.isCurrentMovieSeen)
 
     suggestions.value = []
     searchFeedback.value = null
@@ -375,6 +407,7 @@ function restoreCurrentRoundSnapshot() {
     nowTimestamp.value = Date.now()
     noMovies.value = false
     isLoading.value = false
+    syncCurrentMovieSeenState()
 
     return Boolean(currentMovieId.value && title.value)
   } catch (error) {
@@ -412,8 +445,10 @@ function toggleHistory() {
 }
 
 function handleSeenMovie() {
-  // TODO: "J'AI VU CE FILM !"
-  console.log("Marqué comme vu:", title.value)
+  const payload = createCollectionPayload()
+  if (!payload) return
+
+  isCurrentMovieSeen.value = toggleSeenMovie(payload)
 }
 
 function goToMovieDetails() {
@@ -421,7 +456,16 @@ function goToMovieDetails() {
 
   persistGameProgress()
   persistCurrentRoundSnapshot()
-  router.push({ name: 'movie-details', params: { id: currentMovieId.value } })
+  router.push({ name: 'movie-details', params: { id: currentMovieId.value }, query: { from: 'game' } })
+}
+
+function goToCollection() {
+  persistGameProgress()
+  if (currentMovieId.value) {
+    persistCurrentRoundSnapshot()
+  }
+
+  router.push({ name: 'collection', query: { tab: 'seen' } })
 }
 
 function handleNewGameRequested() {
@@ -536,6 +580,10 @@ function validateGuess() {
         streakMultiplier
       })
     )
+    const payload = createCollectionPayload()
+    if (payload) {
+      addFoundMovie(payload)
+    }
     persistGameProgress()
 
     searchFeedback.value = 'correct'
@@ -574,6 +622,7 @@ async function fetchRandomMovie() {
   roundStartedAt.value = Date.now()
   nowTimestamp.value = Date.now()
   currentMovieId.value = null
+  isCurrentMovieSeen.value = false
 
   let movieData = null
 
@@ -593,6 +642,7 @@ async function fetchRandomMovie() {
     originalTitle.value = movieData.originalTitle
     director.value = movieData.director
     actors.value = movieData.actors
+    syncCurrentMovieSeenState()
   }
 
   isLoading.value = false
@@ -1043,7 +1093,7 @@ onUnmounted(() => {
 /* --- SEARCH BAR --- */
 .search-section {
   width: 100%;
-  max-width: 1100px;
+  max-width: 980px;
   margin: 2rem auto 0 auto;
   padding: 0;
   position: relative;
@@ -1065,7 +1115,7 @@ onUnmounted(() => {
 .search-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 1rem;
+  padding: 0.82rem 0.9rem;
   font-family: 'Outfit', sans-serif;
   font-size: 1rem;
   border: 2px solid var(--border-color);
@@ -1092,7 +1142,7 @@ onUnmounted(() => {
 }
 
 .validate-btn {
-  padding: 1rem 1.5rem;
+  padding: 0.82rem 1.15rem;
   background-color: var(--bg-card);
   border: 2px solid var(--border-color);
   border-radius: 12px;
@@ -1103,6 +1153,32 @@ onUnmounted(() => {
   cursor: pointer;
   transition: all 0.3s ease;
   box-shadow: var(--shadow-soft);
+}
+
+.collection-nav-btn {
+  padding: 0.82rem 1.05rem;
+  background-color: var(--bg-card);
+  border: 2px solid #0d9488;
+  border-radius: 12px;
+  color: #0d9488;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-soft);
+}
+
+.collection-nav-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-hover);
+  background-color: rgba(13, 148, 136, 0.08);
+}
+
+.seen-btn.active {
+  background-color: #92400e;
+  color: #ffffff;
+  border-color: #92400e;
 }
 
 .validate-btn:hover:not(:disabled) {
@@ -1339,6 +1415,16 @@ onUnmounted(() => {
   .poster-actions {
     flex-wrap: wrap;
     justify-content: center;
+  }
+
+  .search-container {
+    flex-wrap: wrap;
+  }
+
+  .validate-btn,
+  .collection-nav-btn {
+    flex: 1;
+    min-width: 120px;
   }
 
   .history-summary {

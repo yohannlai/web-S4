@@ -90,6 +90,14 @@ function formatNumber(num) {
 }
 
 function goBack() {
+  if (route.query.from === 'collection') {
+    router.push({
+      name: 'collection',
+      query: { tab: typeof route.query.tab === 'string' ? route.query.tab : 'seen' }
+    })
+    return
+  }
+
   router.push({ name: 'game' })
 }
 
